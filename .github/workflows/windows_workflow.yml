@@ -1,12 +1,6 @@
 name: Windows workflow
 
-on:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+on: push
 
 jobs:
   build:
