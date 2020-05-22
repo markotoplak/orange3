@@ -8,7 +8,7 @@ from typing import List
 import numpy as np
 from AnyQt.QtWidgets import \
     QStyle, QComboBox, QMessageBox, QGridLayout, QLabel, \
-    QLineEdit, QSizePolicy as Policy, QCompleter
+    QLineEdit, QSizePolicy as Policy, QCompleter, QFileDialog
 from AnyQt.QtCore import Qt, QTimer, QSize
 
 from Orange.data.table import Table, get_sample_datasets_dir
@@ -310,12 +310,16 @@ class OWFile(widget.OWWidget, RecentPathsWComboMixin):
         readers = [f for f in FileFormat.formats
                    if getattr(f, 'read', None)
                    and getattr(f, "EXTENSIONS", None)]
-        filename, reader, _ = open_filename_dialog(start_file, None, readers)
-        if not filename:
+        filenames, reader, _ = open_filename_dialog(start_file, None, readers,
+                                                    dialog=QFileDialog.getOpenFileNames)
+        if not filenames:
             return
-        self.add_path(filename)
+        for f in filenames:
+            self.add_path(f)
         if reader is not None:
             self.recent_paths[0].file_format = reader.qualified_name()
+
+        print(self.recent_paths[0])
 
         self.source = self.LOCAL_FILE
         self.load_data()
