@@ -32,6 +32,8 @@ Want to get involved? Join us on [![Discord](https://img.shields.io/discord/6333
 
 Take a look at our [contributing guide](https://github.com/irgolic/orange3/blob/README-shields/CONTRIBUTING.md), it might answer some questions, and it outlines the standards we adhere to.
 
+fdsfsklfksld
+
 Check out our widget development [![docs](https://readthedocs.org/projects/orange-widget-base/badge/?version=latest)](https://orange-widget-base.readthedocs.io/en/latest/?badge=latest) for a comprehensive guide on writing Orange widgets.
 
 If you're looking for a good starting point, check out our [![good first issues](https://img.shields.io/github/issues/biolab/orange3/good%20first%20issue?label=good%20first%20issues)](https://github.com/biolab/orange3/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
