@@ -2713,7 +2713,7 @@ class TestTableSparseDense(unittest.TestCase):
 class ConcurrencyTests(unittest.TestCase):
 
     def test_from_table_non_blocking(self):
-        iris = Table("iris")
+        iris = Table("iris")[:10]
 
         def slow_compute_value(d):
             sleep(0.1)
@@ -2812,7 +2812,7 @@ def preprocess_domain_single_stupid(domain, callback):
 class EfficientTransformTests(unittest.TestCase):
 
     def setUp(self):
-        self.iris = Table("iris")
+        self.iris = Table("iris")[:10]
 
     def test_simple(self):
         call_cv = Mock()
