@@ -8,7 +8,7 @@ from time import gmtime
 
 import numpy as np
 from AnyQt.QtCore import Qt, QRectF, QSize, QTimer, pyqtSignal as Signal, \
-    QObject
+    QObject, QEvent
 from AnyQt.QtGui import QColor, QPen, QBrush, QPainterPath, QTransform, \
     QPainter
 from AnyQt.QtWidgets import QApplication, QToolTip, QGraphicsTextItem, \
@@ -568,8 +568,7 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
 
         self.view_box = view_box(self)
         _axis = {"left": AxisItem("left"), "bottom": AxisItem("bottom")}
-        self.plot_widget = pg.PlotWidget(viewBox=self.view_box, parent=parent,
-                                         background="w", axisItems=_axis)
+        self.plot_widget = pg.PlotWidget(viewBox=self.view_box, parent=parent, axisItems=_axis)
         self.plot_widget.hideAxis("left")
         self.plot_widget.hideAxis("bottom")
         self.plot_widget.getPlotItem().buttonsHidden = True

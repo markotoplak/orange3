@@ -2,10 +2,12 @@ from xml.sax.saxutils import escape
 
 import numpy as np
 
-from AnyQt.QtCore import QSize, Signal
+from AnyQt.QtCore import QSize, Signal, QEvent, Qt
 from AnyQt.QtWidgets import QApplication
+from PyQt5.QtGui import QPalette, QPen
 
 from orangewidget.utils.visual_settings_dlg import VisualSettingsDialog
+from pyqtgraph import AxisItem
 
 from Orange.data import (
     Table, ContinuousVariable, Domain, Variable, StringVariable
@@ -412,6 +414,7 @@ class OWDataProjectionWidget(OWProjectionWidgetBase, openclass=True):
     def setup_gui(self):
         self._add_graph()
         self._add_controls()
+        # self._update_palette()
         self.input_changed.emit(None)
         self.output_changed.emit(None)
 
@@ -662,6 +665,29 @@ class OWDataProjectionWidget(OWProjectionWidgetBase, openclass=True):
         self.graph.plot_widget.getViewBox().deleteLater()
         self.graph.plot_widget.clear()
         self.graph.clear()
+
+    # def changeEvent(self, event):
+    #     if event.type() == QEvent.PaletteChange:
+    #         self._update_palette()
+    #     super().changeEvent(event)
+    #
+    # def _update_palette(self):
+    #     palette: QPalette = self.palette()
+    #     brush = palette.base()
+    #     text_color = palette.color(QPalette.WindowText)
+    #
+    #     self.graph.update_colors()  # TODO?
+    #     self.graph.plot_widget.setBackground(brush)
+    #     self.graph.tip_textitem.setDefaultTextColor(Qt.black)
+    #
+    #     pen = QPen(text_color)
+    #
+    #     plotItem = self.graph.plot_widget.plotItem
+    #     plotItem.titleLabel.setText(brush.color().name())
+    #     for name in plotItem.axes:
+    #         a: AxisItem = plotItem.getAxis(name)
+    #         a.setPen(pen)
+    #         a.setTextPen(pen)
 
 
 class OWAnchorProjectionWidget(OWDataProjectionWidget, openclass=True):
