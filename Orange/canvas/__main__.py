@@ -455,6 +455,21 @@ def main(argv=None):
             app.setPalette(breeze_dark())
             defaultstylesheet = "darkorange.qss"
 
+    # set pyqtgraph colors
+    def onPaletteChange():
+        p = app.palette()
+        bg = p.base().color().name()
+        fg = p.windowText().color().name()
+
+        import pyqtgraph as pg
+        log.info('Setting pyqtgraph background to ' + bg)
+        pg.setConfigOption('background', bg)
+        log.info('Setting pyqtgraph foreground to ' + fg)
+        pg.setConfigOption('foreground', fg)
+
+    app.paletteChanged.connect(onPaletteChange)
+    onPaletteChange()
+
     palette = app.palette()
     if style is None and palette.color(QPalette.Window).value() < 127:
         log.info("Switching default stylesheet to darkorange")
