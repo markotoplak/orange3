@@ -206,7 +206,6 @@ class OWBoxPlot(widget.OWWidget):
         view.setModel(sorted_model)
         view.setSelectionMode(view.SingleSelection)
         view.selectionModel().selectionChanged.connect(self.attr_changed)
-        view.setMinimumSize(QSize(30, 30))
         # Any other policy than Ignored will let the QListBox's scrollbar
         # set the minimal height (see the penultimate paragraph of
         # http://doc.qt.io/qt-4.8/qabstractscrollarea.html#addScrollBarWidget)
@@ -227,7 +226,6 @@ class OWBoxPlot(widget.OWWidget):
         view = self.group_list = ListViewSearch()
         view.setModel(sorted_model)
         view.selectionModel().selectionChanged.connect(self.grouping_changed)
-        view.setMinimumSize(QSize(30, 30))
         # See the comment above
         view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         box.layout().addWidget(view)
