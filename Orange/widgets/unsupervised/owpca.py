@@ -4,6 +4,8 @@ import numpy
 from AnyQt.QtWidgets import QFormLayout, QSizePolicy, QHeaderView
 from AnyQt.QtCore import Qt, QItemSelection
 
+from orangewidget.gui import TableView
+from orangewidget.utils.itemmodels import PyTableModel
 from orangewidget.report import bool_str
 from orangewidget.settings import Setting
 
@@ -19,10 +21,8 @@ from Orange.widgets.utils.slidergraph import SliderGraph
 from Orange.widgets.utils.widgetpreview import WidgetPreview
 from Orange.widgets.widget import Input, Output
 
-# Maximum number of PCA components that we can set in the widget
-from orangewidget.gui import TableView
-from orangewidget.utils.itemmodels import PyTableModel
 
+# Maximum number of PCA components that we can set in the widget
 MAX_COMPONENTS = 100
 LINE_NAMES = ["component variance", "cumulative variance"]
 
