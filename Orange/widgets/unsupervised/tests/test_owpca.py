@@ -4,6 +4,8 @@ import unittest
 from unittest.mock import patch, Mock
 
 import numpy as np
+from sklearn.utils import check_random_state
+from sklearn.utils.extmath import svd_flip
 
 from Orange.data import Table, Domain, ContinuousVariable, TimeVariable
 from Orange.preprocess import preprocess
@@ -12,8 +14,6 @@ from Orange.widgets.tests.base import WidgetTest
 from Orange.widgets.tests.utils import table_dense_sparse, possible_duplicate_table
 from Orange.widgets.unsupervised.owpca import OWPCA
 from Orange.tests import test_filename
-from sklearn.utils import check_random_state
-from sklearn.utils.extmath import svd_flip
 
 
 class TestOWPCA(WidgetTest):
