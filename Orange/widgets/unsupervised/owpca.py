@@ -1,8 +1,8 @@
 import numbers
 
 import numpy
-from AnyQt.QtWidgets import QFormLayout
-from AnyQt.QtCore import Qt
+from AnyQt.QtWidgets import QFormLayout, QSizePolicy, QHeaderView
+from AnyQt.QtCore import Qt, QItemSelection
 
 from Orange.data import Table, Domain, StringVariable, ContinuousVariable
 from Orange.data.util import get_unique_names
@@ -16,6 +16,9 @@ from Orange.widgets.widget import Input, Output
 
 
 # Maximum number of PCA components that we can set in the widget
+from orangewidget.gui import TableView
+from orangewidget.utils.itemmodels import PyTableModel
+
 MAX_COMPONENTS = 100
 LINE_NAMES = ["component variance", "cumulative variance"]
 
@@ -64,28 +67,6 @@ class OWPCA(widget.OWWidget):
         self._cumulative = None
         self._init_projector()
 
-        # Components Selection
-        form = QFormLayout()
-        box = gui.widgetBox(self.controlArea, "Components Selection",
-                            orientation=form)
-
-        self.components_spin = gui.spin(
-            box, self, "ncomponents", 1, MAX_COMPONENTS,
-            callback=self._update_selection_component_spin,
-            keyboardTracking=False, addToLayout=False
-        )
-        self.components_spin.setSpecialValueText("All")
-
-        self.variance_spin = gui.spin(
-            box, self, "variance_covered", 1, 100,
-            callback=self._update_selection_variance_spin,
-            keyboardTracking=False, addToLayout=False
-        )
-        self.variance_spin.setSuffix("%")
-
-        form.addRow("Components:", self.components_spin)
-        form.addRow("Explained variance:", self.variance_spin)
-
         # Options
         self.options_box = gui.vBox(self.controlArea, "Options")
         self.normalize_box = gui.checkBox(
@@ -96,11 +77,50 @@ class OWPCA(widget.OWWidget):
 
         self.maxp_spin = gui.spin(
             self.options_box, self, "maxp", 1, MAX_COMPONENTS,
-            label="Show only first", callback=self._setup_plot,
+            label="Show only first", callback=self._maxp_changed,
             keyboardTracking=False
         )
 
-        gui.rubber(self.controlArea)
+        # Components Selection
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        box = gui.widgetBox(self.controlArea, "Components Selection",
+                            orientation=form)
+
+        self.components_spin = gui.spin(
+            box, self, "ncomponents", 1, MAX_COMPONENTS,
+            callback=self._component_spin_changed,
+            keyboardTracking=False, addToLayout=False,
+            sizePolicy=(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed),
+            alignment=Qt.AlignRight
+        )
+        self.components_spin.setSpecialValueText("All")
+
+        self.variance_spin = gui.spin(
+            box, self, "variance_covered", 1, 100,
+            callback=self._variance_spin_changed,
+            keyboardTracking=False, addToLayout=False,
+            sizePolicy=(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed),
+            alignment=Qt.AlignRight
+        )
+        self.variance_spin.setSuffix(" %")
+
+        form.addRow("Components:", self.components_spin)
+        form.addRow("Explained variance:", self.variance_spin)
+
+        self.varmodel = PyTableModel(parent=self)
+        self.varmodel.setHorizontalHeaderLabels(("Variance", "Cummulative"))
+
+        view = self.varview = TableView(
+            self,
+            sortingEnabled=False,
+            selectionMode=TableView.SelectionMode.NoSelection)
+        self.varview.clicked.connect(self._select_row)
+        view.horizontalHeader().setDefaultAlignment(Qt.AlignRight)
+        view.verticalHeader().setVisible(True)
+        view.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.MinimumExpanding)
+        view.setModel(self.varmodel)
+        form.addRow(view)
 
         gui.auto_apply(self.buttonsArea, self, "auto_commit")
 
@@ -167,6 +187,7 @@ class OWPCA(widget.OWWidget):
                 self._variance_ratio = variance_ratio
                 self._cumulative = cumulative
                 self._setup_plot()
+                self._setup_table()
             else:
                 self.Warning.trivial_components()
 
@@ -176,6 +197,7 @@ class OWPCA(widget.OWWidget):
         self._pca = None
         self._transformed = None
         self._variance_ratio = None
+        self.varmodel.clear()
         self._cumulative = None
         self.plot.clear_plot()
 
@@ -184,6 +206,30 @@ class OWPCA(widget.OWWidget):
         self.Outputs.data.send(None)
         self.Outputs.components.send(None)
         self.Outputs.pca.send(self._pca_projector)
+
+    def _maxp_changed(self):
+        self._setup_plot()
+        self._setup_table()
+
+    def _setup_table(self):
+        self.varmodel[:] = zip(self._variance_ratio[:self.maxp],
+                               numpy.cumsum(self._variance_ratio))
+        # This can't be set in __init__ because columns must exist
+        view = self.varview
+        for header in (view.horizontalHeader(), view.verticalHeader()):
+            header.setSectionResizeMode(QHeaderView.Stretch)
+        self._update_table_selection()
+
+    def _select_row(self, index):
+        self.ncomponents = index.row() + 1
+        self._component_spin_changed()
+
+    def _update_table_selection(self):
+        index = self.varmodel.index
+        selmodel = self.varview.selectionModel()
+        selmodel.select(
+            QItemSelection(index(0, 0), index(self.ncomponents - 1, 1)),
+            selmodel.ClearAndSelect)
 
     def _setup_plot(self):
         if self._pca is None:
@@ -214,7 +260,7 @@ class OWPCA(widget.OWWidget):
 
         self._invalidate_selection()
 
-    def _update_selection_component_spin(self):
+    def _component_spin_changed(self):
         # cut changed by "ncomponents" spin.
         if self._pca is None:
             self._invalidate_selection()
@@ -231,9 +277,10 @@ class OWPCA(widget.OWWidget):
             self.variance_covered = int(var * 100)
 
         self.plot.set_cut_point(cut)
+        self._update_table_selection()
         self._invalidate_selection()
 
-    def _update_selection_variance_spin(self):
+    def _variance_spin_changed(self):
         # cut changed by "max variance" spin.
         if self._pca is None:
             return
@@ -242,6 +289,7 @@ class OWPCA(widget.OWWidget):
                                  self.variance_covered / 100.0) + 1
         cut = min(cut, len(self._cumulative))
         self.ncomponents = cut
+        self._update_table_selection()
         self.plot.set_cut_point(cut)
         self._invalidate_selection()
 
@@ -351,6 +399,7 @@ class OWPCA(widget.OWWidget):
             ("Explained variance", "{:.3f} %".format(self.variance_covered))
         ))
         self.report_plot()
+        self.report_table("Variances per component", self.varview)
 
     @classmethod
     def migrate_settings(cls, settings, version):
