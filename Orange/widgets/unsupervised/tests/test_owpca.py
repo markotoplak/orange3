@@ -23,7 +23,7 @@ class TestOWPCA(WidgetTest):
     def test_set_variance100(self):
         self.widget.set_data(self.iris)
         self.widget.variance_covered = 100
-        self.widget._update_selection_variance_spin()
+        self.widget._variance_spin_changed()
 
     def test_constant_data(self):
         data = self.iris[::5].copy()
@@ -86,7 +86,7 @@ class TestOWPCA(WidgetTest):
         self.wait_until_finished()
         var2 = self.widget.variance_covered
         self.widget.ncomponents = 3
-        self.widget._update_selection_component_spin()
+        self.widget._component_spin_changed()
         self.wait_until_finished()
         var3 = self.widget.variance_covered
         self.assertGreater(var3, var2)
