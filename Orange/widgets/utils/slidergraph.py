@@ -90,7 +90,7 @@ class SliderGraph(PlotWidget):
         self.x = x
         self.selection_limit = selection_limit
 
-        self.data_increasing = [np.sum(d[1:] - d[:-1]) > 0 for d in y]
+        self.data_increasing = [d[-1] > d[0] for d in y]
 
         # plot sequence
         for s, c, n, inc, w in zip(
@@ -190,17 +190,13 @@ class SliderGraph(PlotWidget):
             This parameter tels whether the curve value is increasing or
             decreasing.
         """
-        if inc:
-            label.anchor = Point(0, 0) if cutidx < len(self.x) / 2 \
-                else Point(1, 1)
-        else:
-            label.anchor = Point(0, 1) if cutidx < len(self.x) / 2 \
-                else Point(1, 0)
+        right = cutidx > len(self.x) / 2
+        label.anchor = Point(right, right == inc)
 
     def _update_horizontal_lines(self):
         """
         This function update the horisontal lines when selection changes.
-        If lines are present jet it calls the function to init them.
+        If lines are not present, it calls the function to init them.
         """
         if not self.plot_horline:  # init horizontal lines
             self._plot_horizontal_lines()
