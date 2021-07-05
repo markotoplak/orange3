@@ -1,3 +1,6 @@
+from itertools import repeat, chain
+from numbers import Number
+
 import numpy as np
 from pyqtgraph import mkPen, InfiniteLine, PlotCurveItem, \
     TextItem, Point
@@ -79,7 +82,7 @@ class SliderGraph(PlotWidget):
         self.data_increasing = None  # true if data mainly increasing
 
     def update(self, x, y, colors, cutpoint_x=None, selection_limit=None,
-               names=None):
+               names=None, *, widths=()):
         """
         Function replots a graph.
 
@@ -104,7 +107,12 @@ class SliderGraph(PlotWidget):
         """
         self.clear_plot()
         if names is None:
-            names = [None] * len(y)
+            names = ()
+        names = chain(names, repeat(None))
+        if isinstance(widths, Number):
+            widths = repeat(widths)
+        else:
+            widths = chain(widths, repeat(2))
 
         self.sequences = y
         self.x = x
@@ -114,9 +122,10 @@ class SliderGraph(PlotWidget):
         foreground = self.palette().text().color()
         foreground.setAlpha(128)
         # plot sequence
-        for s, c, n, inc in zip(y, colors, names, self.data_increasing):
+        for s, c, n, inc, w in zip(
+                y, colors, names, self.data_increasing, widths):
             c = QColor(c)
-            self.plot(x, s, pen=mkPen(c, width=2), antialias=True)
+            self.plot(x, s, pen=mkPen(c, width=w), antialias=True)
 
             if n is not None:
                 label = TextItem(
