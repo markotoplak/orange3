@@ -4,6 +4,8 @@ import numpy
 from AnyQt.QtWidgets import QFormLayout, QSizePolicy, QHeaderView
 from AnyQt.QtCore import Qt, QItemSelection
 
+from pyqtgraph import Point
+
 from orangewidget.gui import TableView
 from orangewidget.utils.itemmodels import PyTableModel
 from orangewidget.report import bool_str
@@ -36,6 +38,7 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
 
     class Inputs:
         data = Input("Data", Table)
+        test_data = Input("Test Data", Table)
 
     class Outputs:
         transformed_data = Output("Transformed Data", Table, replaces=["Transformed data"])
@@ -66,10 +69,12 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
         ConcurrentWidgetMixin.__init__(self)
 
         self.data = None
+        self.test_data = None
         self._pca = None
         self._transformed = None
         self._variance_ratio = None
         self._cumulative = None
+        self._test_variance = None
 
         # Options
         self.options_box = gui.vBox(self.controlArea, "Options")
@@ -113,8 +118,6 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
         form.addRow("Explained variance:", self.variance_spin)
 
         self.varmodel = PyTableModel(parent=self)
-        self.varmodel.setHorizontalHeaderLabels(("Variance", "Cummulative"))
-
         view = self.varview = TableView(
             self,
             sortingEnabled=False,
@@ -128,7 +131,7 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
 
         gui.auto_apply(self.buttonsArea, self, "auto_commit")
 
-        self.plot = SliderGraph(
+        self.plot = PCASliderGraph(
             "Principal Components", "Proportion of variance",
             self._on_cut_changed)
 
@@ -163,7 +166,19 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
                 return
 
         self.data = data
+
+    @Inputs.test_data
+    def set_test_data(self, test_data):
+        self.test_data = test_data
+
+    def handleNewSignals(self):
         self.fit()
+
+    def test_plot_commit(self):
+        self.run_test_data()
+        self._setup_plot()
+        self._setup_table()
+        self.commit.now()
 
     def fit(self):
         self.cancel()
@@ -201,8 +216,7 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
             self._pca = pca
             self._variance_ratio = variance_ratio
             self._cumulative = cumulative
-            self._setup_plot()
-            self._setup_table()
+            self.test_plot_commit()
         else:
             self.Warning.trivial_components()
 
@@ -215,11 +229,21 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
         self.shutdown()
         super().onDeleteWidget()
 
+    def run_test_data(self):
+        if self._pca is None or self.test_data is None:
+            self._test_variance = None
+            return
+
+        projected = self._pca(self.test_data).X
+        self._test_variance = numpy.var(projected, axis=0)
+        self._test_variance /= numpy.sum(self._test_variance)
+
     def clear(self):
         self._pca = None
         self._transformed = None
         self._variance_ratio = None
         self.varmodel.clear()
+        self._test_variance = None
         self._cumulative = None
         self.plot.clear_plot()
 
@@ -234,8 +258,20 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
         self._setup_table()
 
     def _setup_table(self):
-        self.varmodel[:] = zip(self._variance_ratio[:self.maxp],
-                               numpy.cumsum(self._variance_ratio))
+        if self._pca is None:
+            self.varmodel.clear()
+            return
+
+        columns = (self._variance_ratio[:self.maxp],
+                   numpy.cumsum(self._variance_ratio))
+        if self._test_variance is not None:
+            columns += (self._test_variance, numpy.cumsum(self._test_variance))
+            self.varmodel.setHorizontalHeaderLabels(("Var", "Cumul",
+                                                     "Test var", "Cumul"))
+        else:
+            self.varmodel.setHorizontalHeaderLabels(("Variance", "Cumulative"))
+
+        self.varmodel[:] = zip(*columns)
         # This can't be set in __init__ because columns must exist
         view = self.varview
         for header in (view.horizontalHeader(), view.verticalHeader()):
@@ -250,7 +286,7 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
         index = self.varmodel.index
         selmodel = self.varview.selectionModel()
         selmodel.select(
-            QItemSelection(index(0, 0), index(self.ncomponents - 1, 1)),
+            QItemSelection(index(0, 0), index(self.ncomponents - 1, 3)),
             selmodel.ClearAndSelect)
 
     def _setup_plot(self):
@@ -262,11 +298,19 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
         explained = self._cumulative
         cutpos = self._nselected_components()
         p = min(len(self._variance_ratio), self.maxp)
+        xs = numpy.arange(1, p + 1)
+
+        yss = [explained_ratio[:p], explained[:p]]
+        colors = [Qt.red, Qt.darkYellow]
+        widths = [2, 2]
+        if self._test_variance is not None:
+            yss += [self._test_variance[:p],
+                    numpy.cumsum(self._test_variance[:p])]
+            colors *= 2
+            widths += [4, 4]
 
         self.plot.update(
-            numpy.arange(1, p+1), [explained_ratio[:p], explained[:p]],
-            [Qt.red, Qt.darkYellow], cutpoint_x=cutpos, names=LINE_NAMES)
-
+            xs, yss, colors, cutpoint_x=cutpos, names=LINE_NAMES, widths=widths)
         self._update_axis()
 
     def _on_cut_changed(self, components):
@@ -278,6 +322,8 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
             var = self._cumulative[components - 1]
             if numpy.isfinite(var):
                 self.variance_covered = int(var * 100)
+
+        self._update_table_selection()
 
         self._invalidate_selection()
 
@@ -316,6 +362,7 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
 
     def _update_normalize(self):
         self.fit()
+        self.test_plot_commit()
         if self.data is None:
             self._invalidate_selection()
 
@@ -443,5 +490,29 @@ class OWPCA(widget.OWWidget, ConcurrentWidgetMixin):
         settings.pop("auto_update", None)
 
 
+class PCASliderGraph(SliderGraph):
+    def _update_horizontal_lines(self):
+        # When showing four curves, in case the labels on the train and test
+        # curve overlap, but one below and one above the curve
+        super()._update_horizontal_lines()
+        if len(self.sequences) != 4:
+            return
+
+        for ci in (0, 1):
+            lab0, lab1 = (self.plot_horlabel[ci + i] for i in (0, 2))
+            if not lab0.textItem.collidesWithItem(lab1.textItem):
+                continue
+
+            first_up = lab0.pos().y() > lab1.pos().y()
+            lab0.anchor = Point(lab0.anchor[0], first_up)
+            lab0.updateTextPos()
+            lab1.anchor = Point(lab1.anchor[0], not first_up)
+            lab1.updateTextPos()
+
+
 if __name__ == "__main__":  # pragma: no cover
-    WidgetPreview(OWPCA).run(Table("housing"))
+    data = Table("housing")
+    test = numpy.zeros(len(data), dtype=bool)
+    test[::3] = True
+    WidgetPreview(OWPCA).run(set_data=data[:-30],
+                             set_test_data=data[-50:])
