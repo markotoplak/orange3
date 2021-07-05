@@ -22,7 +22,7 @@ class TestOWPCA(WidgetTest):
         self.iris = Table("iris")  # type: Table
 
     def test_set_variance100(self):
-        self.widget.set_data(self.iris)
+        self.send_signal(self.widget.Inputs.data, self.iris)
         self.widget.variance_covered = 100
         self.widget._variance_spin_changed()
 
@@ -147,7 +147,7 @@ class TestOWPCA(WidgetTest):
 
         self.widget.normalize = False
         self.widget._update_normalize()     # pylint: disable=protected-access
-        self.widget.set_data(data)
+        self.send_signal(self.widget.Inputs.data, data)
 
         components = self.get_output(self.widget.Outputs.components)
         self.assertTrue(all(type(a) is ContinuousVariable   # pylint: disable=unidiomatic-typecheck
