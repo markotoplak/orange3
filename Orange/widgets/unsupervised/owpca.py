@@ -447,6 +447,7 @@ class OWPCA(widget.OWWidget):
 
     @classmethod
     def migrate_settings(cls, settings, version):
+        # pylint: disable=redefined-outer-name,unused-argument
         if "variance_covered" in settings:
             # Due to the error in gh-1896 the variance_covered was persisted
             # as a NaN value, causing a TypeError in the widgets `__init__`.
@@ -490,8 +491,8 @@ class PCASliderGraph(SliderGraph):
 
 
 if __name__ == "__main__":  # pragma: no cover
-    data = Table("housing")
-    test = numpy.zeros(len(data), dtype=bool)
+    housing = Table("housing")
+    test = numpy.zeros(len(housing), dtype=bool)
     test[::3] = True
-    WidgetPreview(OWPCA).run(set_data=data[:-30],
-                             set_test_data=data[-50:])
+    WidgetPreview(OWPCA).run(set_data=housing[:-30],
+                             set_test_data=housing[-50:])
