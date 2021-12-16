@@ -263,11 +263,25 @@ class OWScatterPlotGraph(OWScatterPlotBase):
         style = Updater.LINE_STYLES[style]
         color.setAlpha(alpha)
         if self.orthonormal_regression:
-            line = self._orthonormal_line(x, y, color, width, style)
+            linefn = self._orthonormal_line
         else:
-            line = self._regression_line(x, y, color, width, style)
+            linefn = self._regression_line
+        line = linefn(x, y, color, width, style)
         if line is None:
             return
+
+        # bootstrap
+        color.setAlpha(alpha/10)
+        random_state = np.random.RandomState(0)
+        n = len(x)
+        for a in range(100):
+            indices = random_state.choice(np.arange(n), n)
+            xb = x[indices]
+            yb = y[indices]
+            lineb = linefn(xb, yb, color, 1, style)
+            self.plot_widget.addItem(lineb)
+            self.reg_line_items.append(lineb)
+
         self.plot_widget.addItem(line)
         self.reg_line_items.append(line)
 
