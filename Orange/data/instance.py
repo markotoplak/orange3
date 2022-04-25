@@ -149,6 +149,7 @@ class Instance:
                              for var, val in zip(variables, data))
 
     def _str(self, limit):
+        print("_str")
         s = "[" + self.str_values(self._x, self._domain.attributes, limit)
         if self._domain.class_vars:
             s += " | " + \
