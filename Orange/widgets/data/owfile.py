@@ -566,6 +566,7 @@ class OWFile(widget.OWWidget, RecentPathsWComboMixin):
                 self.Warning.performance_warning()
 
     def apply_domain_edit(self):
+        print("domain edit")
         self.Warning.performance_warning.clear()
         self.Warning.renamed_vars.clear()
         if self.data is None:
@@ -574,11 +575,14 @@ class OWFile(widget.OWWidget, RecentPathsWComboMixin):
             domain, cols, renamed = \
                 self.domain_editor.get_domain(self.data.domain, self.data,
                                               deduplicate=True)
+            print("domain", len(domain))
+            print("data.domain", len(self.data.domain))
             if not (domain.variables or domain.metas):
                 table = None
             elif domain is self.data.domain:
                 table = self.data
             else:
+                print("DOING TRANSFORM")
                 X, y, m = cols
                 table = Table.from_numpy(domain, X, y, m, self.data.W)
                 table.name = self.data.name
@@ -587,11 +591,13 @@ class OWFile(widget.OWWidget, RecentPathsWComboMixin):
                 self._inspect_discrete_variables(domain)
             if renamed:
                 self.Warning.renamed_vars(f"Renamed: {', '.join(renamed)}")
+        print("End changes")
 
         self.Warning.multiple_targets(
             shown=table is not None and len(table.domain.class_vars) > 1)
         self.Outputs.data.send(table)
         self.apply_button.setEnabled(False)
+        print("end domain edit")
 
     def get_widget_name_extension(self):
         _, name = os.path.split(self.loaded_file)

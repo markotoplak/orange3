@@ -1904,6 +1904,7 @@ class Table(Sequence, Storage):
 
     def _compute_basic_stats(self, columns=None,
                              include_metas=False, compute_variance=False):
+        print("BASIC STATS")
         if compute_variance:
             raise NotImplementedError("computation of variance is "
                                       "not implemented yet")
@@ -1912,6 +1913,7 @@ class Table(Sequence, Storage):
         stats = []
         if not columns:
             if self.domain.attributes:
+                print("FAST STATS X")
                 rr.append(fast_stats(self._X, W))
             if self.domain.class_vars:
                 rr.append(fast_stats(self._Y, W))
