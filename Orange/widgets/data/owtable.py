@@ -281,6 +281,7 @@ class OWDataTable(OWWidget):
     @Inputs.data
     def set_dataset(self, index: int, data: Table):
         """Set the input dataset."""
+        print("OWTABLE SET_DATASET", len(data))
         datasetname = getattr(data, "name", "Data")
         slot = self._inputs[index]
         view = slot.view
@@ -708,6 +709,7 @@ class OWDataTable(OWWidget):
         """
         Commit/send the current selected row/column selection.
         """
+        return
         selected_data = table = rowsel = None
         view = self.tabs.currentWidget()
         if view and view.model() is not None:

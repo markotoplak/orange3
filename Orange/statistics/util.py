@@ -351,12 +351,18 @@ def stats(X, weights=None, compute_variance=False):
             return bn.nansum(X * np.c_[weights] / sum(weights), axis=0)
 
     if X.size and is_numeric and not is_sparse:
+        print("stats", type(X))
         nans = np.isnan(X).sum(axis=0)
+        print("nans finished")
+        mm = np.nanmin(X, axis=0)
+        print("mm finished")
+        print(np.column_stack((mm,)))
+        print("test column stack finished")
         return np.column_stack((
             np.nanmin(X, axis=0),
             np.nanmax(X, axis=0),
-            nanmean(X, axis=0) if not weighted else weighted_mean(),
-            nanvar(X, axis=0) if compute_variance else \
+            np.nanmean(X, axis=0) if not weighted else weighted_mean(),
+            np.nanvar(X, axis=0) if compute_variance else \
                 np.zeros(X.shape[1] if X.ndim == 2 else 1),
             nans,
             X.shape[0] - nans))
@@ -374,6 +380,7 @@ def stats(X, weights=None, compute_variance=False):
             X.shape[0] - non_zero,
             non_zero))
     else:
+        print("PANDAS")
         nans = (pandas.isnull(X).sum(axis=0) + (X == "").sum(axis=0)) \
             if X.size else np.zeros(X.shape[1])
         return np.column_stack((
