@@ -1,7 +1,9 @@
+from datetime import datetime
 import math
 from collections import namedtuple
 from itertools import chain, count
 import numpy as np
+import dask.array as da
 
 from AnyQt.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsItem, QGraphicsSimpleTextItem,
@@ -15,7 +17,7 @@ from orangewidget.utils.listview import ListViewSearch
 import scipy.special
 from scipy.stats import f_oneway, chi2_contingency
 
-import Orange.data
+from Orange.data import Table
 from Orange.data.filter import FilterDiscrete, FilterContinuous, Values, \
     IsDefined
 from Orange.statistics import contingency, distribution
@@ -46,27 +48,77 @@ def compute_scale(min_, max_):
     return first_val, step
 
 
+def print_now(*args, **kwargs):
+    print(datetime.now().strftime("%H:%M:%S.%f"), *args, **kwargs)
+
+
+def run_with_timer(func, *args, **kwargs):
+    start = datetime.now()
+    print(start.strftime("%H:%M:%S.%f"), "RUNNNING: ", func, end=" ... ")
+    result = func(*args, **kwargs)
+    print("COMPLETED IN {}".format(datetime.now() - start))
+    return result
+
+
+def maybe_compute(ar):
+    print_now("MAYBE COMPUTE:", type(ar), ar)
+    if isinstance(ar, da.Array):
+        return ar.compute()
+    return ar
+
+
 ContDataRange = namedtuple("ContDataRange", ["low", "high", "group_value"])
 DiscDataRange = namedtuple("DiscDataRange", ["value", "group_value"])
 
 
 class BoxData:
     def __init__(self, col, group_val=None):
-        self.n = len(col) - np.sum(np.isnan(col))
+        if isinstance(col, da.Array):
+            self.dask_compute(col, group_val)
+        else:
+            print("BOXDATA: GOT NUMPY ARRAY")
+            self.n = len(col) - np.sum(np.isnan(col))
+            if self.n == 0:
+                return
+            self.a_min = np.nanmin(col)
+            self.a_max = np.nanmax(col)
+            self.mean = np.nanmean(col)
+            self.var = np.nanvar(col)
+            self.dev = math.sqrt(self.var)
+            self.q25, self.median, self.q75 = np.nanquantile(col, [0.25, 0.5, 0.75], method="midpoint")
+            self.data_range = ContDataRange(self.q25, self.q75, group_val)
+            self.q25 = None if self.q25 == self.median else self.q25
+            self.q75 = None if self.q75 == self.median else self.q75
+
+        print_now("BOXDATA: COL", type(col))
+        print_now("BOXDATA: GRP", group_val)
+        print_now("BOXDATA: VALS", self.n, self.a_min, self.a_max, self.mean, self.var, self.dev, self.q25, self.median, self.q75)
+
+    def dask_compute(self, ar, group):
+        # temporarily moved computation for dask arrays
+        # only works for arrays without NaNs
+        nans = da.isnan(ar)
+        if nans.any():
+            print_now("BOXDATA: has nans, expect bad results")
+        print_now("BOXDATA: Computing Chunk Sizes")
+        ar.compute_chunk_sizes()
+        self.n = ar.shape[0]
         if self.n == 0:
             return
-        self.a_min = np.nanmin(col)
-        self.a_max = np.nanmax(col)
-        self.mean = np.nanmean(col)
-        self.var = np.nanvar(col)
-        self.dev = np.sqrt(self.var)
-        self.q25, self.median, self.q75 = \
-            np.nanquantile(col, [0.25, 0.5, 0.75], interpolation="midpoint")
-        self.data_range = ContDataRange(self.q25, self.q75, group_val)
-        if self.q25 == self.median:
-            self.q25 = None
-        if self.q75 == self.median:
-            self.q75 = None
+        print_now("BOXDATA: Computing Minimum")
+        self.a_min = da.min(ar).compute()
+        print_now("BOXDATA: Computing Maximum")
+        self.a_max = da.max(ar).compute()
+        print_now("BOXDATA: Computing Mean")
+        self.mean = da.mean(ar).compute()
+        print_now("BOXDATA: Computing Variance")
+        self.var = da.var(ar).compute()
+        self.dev = math.sqrt(self.var)
+        print_now("BOXDATA: Computing Quantiles")
+        self.q25, self.median, self.q75 = da.percentile(ar, [25, 50, 75]).compute()
+        self.data_range = ContDataRange(self.q25, self.q75, group)
+        self.q25 = None if self.q25 == self.median else self.q25
+        self.q75 = None if self.q75 == self.median else self.q75
 
 
 class FilterGraphicsRectItem(QGraphicsRectItem):
@@ -83,6 +135,7 @@ class SortProxyModel(QSortFilterProxyModel):
         r_score = right.data(role)
         return r_score is not None and (l_score is None or l_score < r_score)
 
+
 class OWBoxPlot(widget.OWWidget):
     name = "Box Plot"
     description = "Visualize the distribution of feature values in a box plot."
@@ -91,11 +144,11 @@ class OWBoxPlot(widget.OWWidget):
     keywords = ["whisker"]
 
     class Inputs:
-        data = Input("Data", Orange.data.Table)
+        data = Input("Data", Table)
 
     class Outputs:
-        selected_data = Output("Selected Data", Orange.data.Table, default=True)
-        annotated_data = Output(ANNOTATED_DATA_SIGNAL_NAME, Orange.data.Table)
+        selected_data = Output("Selected Data", Table, default=True)
+        annotated_data = Output(ANNOTATED_DATA_SIGNAL_NAME, Table)
 
     class Warning(widget.OWWidget.Warning):
         no_vars = widget.Msg(
@@ -289,19 +342,19 @@ class OWBoxPlot(widget.OWWidget):
 
         self.dataset = dataset
         if dataset:
-            self.reset_attrs()
-            self.reset_groups()
-            self._select_default_variables()
-            self.openContext(self.dataset)
-            self._set_list_view_selections()
+            run_with_timer(self.reset_attrs)
+            run_with_timer(self.reset_groups)
+            run_with_timer(self._select_default_variables)
+            run_with_timer(self.openContext, self.dataset)
+            run_with_timer(self._set_list_view_selections)
             self.compute_box_data()
-            self.apply_attr_sorting()
-            self.apply_group_sorting()
-            self.update_graph()
-            self.select_box_items()
+            run_with_timer(self.apply_attr_sorting)
+            run_with_timer(self.apply_group_sorting)
+            run_with_timer(self.update_graph)
+            run_with_timer(self.select_box_items)
 
-        self.update_box_visibilities()
-        self.commit()
+        run_with_timer(self.update_box_visibilities)
+        run_with_timer(self.commit)
 
     def _reset_all_data(self):
         self.clear_scene()
@@ -451,10 +504,10 @@ class OWBoxPlot(widget.OWWidget):
     def _variables_changed(self, sorting):
         self.selection = ()
         self.compute_box_data()
-        sorting()
-        self.update_graph()
-        self.update_box_visibilities()
-        self.commit()
+        run_with_timer(sorting)
+        run_with_timer(self.update_graph)
+        run_with_timer(self.update_box_visibilities)
+        run_with_timer(self.commit)
 
     def update_graph(self):
         pending_selection = self.selection
@@ -463,11 +516,14 @@ class OWBoxPlot(widget.OWWidget):
             self.clear_scene()
 
             if self.dataset is None or self.attribute is None:
+                print("UPDATE GRAPH: None")
                 return
 
             if self.attribute.is_continuous:
+                print("UPDATE GRAPH: Cont")
                 self._display_changed_cont()
             else:
+                print("UPDATE GRAPH: Disc")
                 self._display_changed_disc()
             self.selection = pending_selection
             self.draw_stat()
@@ -490,7 +546,7 @@ class OWBoxPlot(widget.OWWidget):
                 box.setSelected(box.data_range in selection)
 
     def _group_cols(self, data, group, attr):
-        if isinstance(attr, np.ndarray):
+        if isinstance(attr, (np.ndarray, da.Array)):
             attr_col = attr
         else:
             attr_col = data.get_column_view(group)[0].astype(float)
@@ -511,10 +567,13 @@ class OWBoxPlot(widget.OWWidget):
             self.dist = self.conts = None
             return
         if self.group_var:
+            print_now("COMPUTE: grouped")
             self.dist = None
             missing_val_str = f"missing '{self.group_var.name}'"
             group_var_labels = self.group_var.values + ("",)
             if self.attribute.is_continuous:
+                # TODO: why doesn't this work? ... compute grouped continuous data
+                print_now("COMPUTE: continuous")
                 stats, label_texts = [], []
                 attr_col = dataset.get_column_view(attr)[0].astype(float)
                 for group, value in \
@@ -526,6 +585,7 @@ class OWBoxPlot(widget.OWWidget):
                 self.stats = stats
                 self.label_txts_all = label_texts
             else:
+                print_now("COMPUTE: categorical")
                 self.conts = contingency.get_contingency(
                     dataset, attr, self.group_var)
                 self.label_txts_all = [
@@ -533,17 +593,22 @@ class OWBoxPlot(widget.OWWidget):
                         group_var_labels, self.conts.array_with_unknowns)
                     if np.sum(c) > 0]
         else:
+            print_now("COMPUTE: ungrouped")
             self.conts = None
             if self.attribute.is_continuous:
+                print_now("COMPUTE: continuous")
                 attr_col = dataset.get_column_view(attr)[0].astype(float)
                 self.stats = [BoxData(attr_col)]
             else:
+                print_now("COMPUTE: categorical")
                 self.dist = distribution.get_distribution(dataset, attr)
             self.label_txts_all = [""]
+        print_now("COMPUTE: labels, stats")
         self.label_txts = [txts for stat, txts in zip(self.stats,
                                                       self.label_txts_all)
                            if stat.n > 0]
         self.stats = [stat for stat in self.stats if stat.n > 0]
+        print_now("COMPUTE: done")
 
     def update_box_visibilities(self):
         self.controls.stretched.setDisabled(self.group_var is self.attribute)
@@ -654,7 +719,9 @@ class OWBoxPlot(widget.OWWidget):
                 for cont, val in zip(conts, self.group_var.values + ("", ))
                 if np.sum(cont) > 0
             ]
-            sums_ = np.sum(conts, axis=1)
+            print_now("UPDATE GRAPH: presum")
+            sums_ = maybe_compute(np.sum(conts, axis=1))
+            print_now("UPDATE GRAPH: sum")
             sums_ = sums_[sums_ > 0]  # only bars with sum > 0 are shown
 
             if self.sort_freqs:
@@ -682,7 +749,9 @@ class OWBoxPlot(widget.OWWidget):
         self.box_scene.setSceneRect(-self.label_width - 5,
                                     -30 - len(self.boxes) * 40,
                                     self.scene_width, len(self.boxes * 40) + 90)
+        print_now("UPDTAE GRAPH: tests")
         self._compute_tests_disc()
+        print_now("UPDTAE GRAPH: end")
 
     def __draw_group_labels(self, y, row):
         """Draw group labels
@@ -777,6 +846,7 @@ class OWBoxPlot(widget.OWWidget):
         # TODO: Check this function
         # noinspection PyPep8Naming
         def stat_ANOVA():
+            print_now("ANOVA")
             if any(stat.n == 0 for stat in self.stats):
                 return np.nan, np.nan
             n = sum(stat.n for stat in self.stats)
@@ -787,6 +857,7 @@ class OWBoxPlot(widget.OWWidget):
 
             var_within = sum(stat.n * stat.var for stat in self.stats)
             df_within = n - len(self.stats)
+            print_now("ANOVA: ", var_within, df_within, df_between)
             if var_within == 0 or df_within == 0 or df_between == 0:
                 return np.nan, np.nan
             F = (var_between / df_between) / (var_within / df_within)
@@ -794,6 +865,8 @@ class OWBoxPlot(widget.OWWidget):
             return F, p
 
         n = len(self.dataset)
+        print_now("DESCRIPTIONS: stats", self.stats)
+        print_now("DESCRIPTIONS: compare", self.compare)
         if self.compare == OWBoxPlot.CompareNone or len(self.stats) < 2:
             t = ""
         elif any(s.n <= 1 for s in self.stats):
@@ -807,6 +880,7 @@ class OWBoxPlot(widget.OWWidget):
                 # t = "Mann-Whitney's z: %.1f (p=%.3f)" % (z, p)
             else:
                 t, p = stat_ttest()
+                print_now("DESCRIPTIONS: t", t, p)
                 t = "" if np.isnan(t) else f"Student's t: {t:.3f} (p={p:.3f}, N={n})"
         else:
             if self.compare == OWBoxPlot.CompareMedians:
@@ -815,6 +889,7 @@ class OWBoxPlot(widget.OWWidget):
                 # t = "Kruskal Wallis's U: %.1f (p=%.3f)" % (U, p)
             else:
                 F, p = stat_ANOVA()
+                print_now("DESCRIPTIONS: F", F, p)
                 t = "" if np.isnan(F) else f"ANOVA: {F:.3f} (p={p:.3f}, N={n})"
         self.stat_test = t
 
@@ -822,7 +897,9 @@ class OWBoxPlot(widget.OWWidget):
         if self.group_var is None or self.attribute is None:
             self.stat_test = ""
         else:
+            print_now("CHI SQUARE: compute")
             chi, p, dof = self._chi_square(self.group_var, self.attribute)
+            print_now("CHI SQUARE: done")
             if np.isnan(p):
                 self.stat_test = ""
             else:
@@ -1120,8 +1197,8 @@ class OWBoxPlot(widget.OWWidget):
         else:
             selected, selection = None, []
         self.Outputs.selected_data.send(selected)
-        self.Outputs.annotated_data.send(
-            create_annotated_table(self.dataset, selection))
+        # FIXME: create_annotated_table uses a lot of memory, it probably copies the whole array
+        # self.Outputs.annotated_data.send(create_annotated_table(self.dataset, selection))
 
     def _gather_conditions(self):
         conditions = []
@@ -1260,4 +1337,4 @@ class OWBoxPlot(widget.OWWidget):
 
 
 if __name__ == "__main__":  # pragma: no cover
-    WidgetPreview(OWBoxPlot).run(Orange.data.Table("heart_disease.tab"))
+    WidgetPreview(OWBoxPlot).run(Table("heart_disease.tab"))
