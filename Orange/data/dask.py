@@ -4,7 +4,7 @@ import h5py
 import dask.array as da
 import numpy as np
 
-from Orange.data import Table, Domain
+from Orange.data import Table, Domain, ContinuousVariable, DiscreteVariable
 
 
 class DaskTable(Table):
@@ -61,20 +61,28 @@ def table_to_dask(table, filename):
 
 
 if __name__ == '__main__':
-    iris = Table("iris.tab")
-    table_to_dask(iris, "iris.hdf5")
-    dt = DaskTable.from_file("iris.hdf5")
+    # iris = Table("iris.tab")
+    # table_to_dask(iris, "iris.hdf5")
+    # dt = DaskTable.from_file("iris.hdf5")
 
-    zoo = Table("zoo.tab")
-    table_to_dask(zoo, "zoo.hdf5")
+    # zoo = Table("zoo.tab")
+    # table_to_dask(zoo, "zoo.hdf5")
 
-    bigtable = Table.from_numpy(domain=None, X=np.random.random((50000, 10000)))
-    print(bigtable.X.shape)
-    table_to_dask(bigtable, "t50000.hdf5")
 
-    print(iris[0])
-    print(dt[0])
+    def variable(x):
+        if x < 10000:
+            return ContinuousVariable("Continuous " + str(x))
+        return DiscreteVariable("Discrete " + str(x), ["1", "2", "3", "4"])
 
-    print(dt.X)
-    print(dt)
+    domain = Domain([variable(i) for i in range(20000)])
+    x = np.c_[np.random.random((20000, 10000)), np.random.randint(4, size=(20000, 10000))]
+    bigtable = Table.from_numpy(domain=domain, X=x)
+    # print(bigtable.X.shape)
+    table_to_dask(bigtable, "t4e6_mixed.hdf5")
+
+    # print(iris[0])
+    # print(dt[0])
+
+    # print(dt.X)
+    # print(dt)
 
