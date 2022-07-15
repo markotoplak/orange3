@@ -302,11 +302,13 @@ class _ArrayConversion:
 
         shared_cache = _thread_local.conversion_cache
         for i, col in enumerate(self.src_cols):
+            print(i, col)
             if col is None:
                 col_array = match_density(
                     np.full((n_rows, 1), self.variables[i].Unknown)
                 )
             elif not isinstance(col, Integral):
+                print("integral")
                 if isinstance(col, SharedComputeValue):
                     shared = _idcache_restore(shared_cache, (col.compute_shared, source))
                     if shared is None:
@@ -759,8 +761,8 @@ class Table(Sequence, Storage):
 
                 # TODO, these are wrong. We have to decide how to know the output is a dask array
                 table_conversion.X.is_dask = isinstance(source.X, dask.array.Array)
-                table_conversion.Y.is_dask = isinstance(source, dask.array.Array)
-                table_conversion.metas.is_dask = isinstance(source, dask.array.Array)
+                table_conversion.Y.is_dask = isinstance(source.X, dask.array.Array)
+                table_conversion.metas.is_dask = isinstance(source.X, dask.array.Array)
 
                 _idcache_save(_thread_local.domain_cache, (domain, source.domain),
                               table_conversion)
