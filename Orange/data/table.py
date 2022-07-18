@@ -302,13 +302,11 @@ class _ArrayConversion:
 
         shared_cache = _thread_local.conversion_cache
         for i, col in enumerate(self.src_cols):
-            print(i, col)
             if col is None:
                 col_array = match_density(
                     np.full((n_rows, 1), self.variables[i].Unknown)
                 )
             elif not isinstance(col, Integral):
-                print("integral")
                 if isinstance(col, SharedComputeValue):
                     shared = _idcache_restore(shared_cache, (col.compute_shared, source))
                     if shared is None:
