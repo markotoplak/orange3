@@ -137,6 +137,9 @@ class DaskTable(Table):
         stats = stats.compute()
         return stats
 
+    def _update_locks(self, *args, **kwargs):
+        return
+
 
 def dask_stats(X, compute_variance=False):
     is_numeric = np.issubdtype(X.dtype, np.number)
