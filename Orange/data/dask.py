@@ -143,6 +143,23 @@ class DaskTable(Table):
     def _update_locks(self, *args, **kwargs):
         return
 
+    def ensure_copy(self):
+        self._X = self._X.copy()
+        self._Y = self._Y.copy()
+        self._metas = self._metas.copy()
+        self._W = self._W.copy()
+
+    def get_nan_frequency_attribute(self):
+        if self.X.size == 0:
+            return 0
+        return np.isnan(self.X).sum().compute() / self.X.size
+
+
+def maybe_compute(ar):
+    if isinstance(ar, da.Array):
+        return ar.compute()
+    return ar
+
 
 def dask_stats(X, compute_variance=False):
     is_numeric = np.issubdtype(X.dtype, np.number)
