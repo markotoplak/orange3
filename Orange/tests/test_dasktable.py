@@ -15,9 +15,12 @@ def open_as_dask(table):
     if isinstance(table, str):
         table = Table(table)
     with named_file('') as fn:
-        DaskTable.save(table, fn)
-        dasktable = DaskTable.from_file(fn)
-        yield dasktable
+        try:
+            DaskTable.save(table, fn)
+            dasktable = DaskTable.from_file(fn)
+            yield dasktable
+        finally:
+            dasktable.close()
 
 
 class TableTestCase(unittest.TestCase):
@@ -37,6 +40,7 @@ class TableTestCase(unittest.TestCase):
             DaskTable.save(zoo, fn)
             dzoo = DaskTable.from_file(fn)
             self.same_tables(zoo, dzoo)
+            dzoo.close()
 
     def test_save_dasktable(self):
         zoo = Table('zoo')
@@ -47,6 +51,8 @@ class TableTestCase(unittest.TestCase):
                 dzoo.save(fn2)
                 dzoo2 = DaskTable.from_file(fn)
                 self.same_tables(zoo, dzoo2)
+                dzoo2.close()
+            dzoo.close()
 
     def test_save_dasktable_empty(self):
         zoo = Table('zoo')
@@ -58,6 +64,8 @@ class TableTestCase(unittest.TestCase):
                 dzoo.save(fn2)
                 dzoo2 = DaskTable.from_file(fn)
                 self.same_tables(zoo, dzoo2)
+                dzoo2.close()
+            dzoo.close()
 
     def test_dask_stats(self):
         with open_as_dask("zoo") as data:

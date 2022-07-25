@@ -24,7 +24,7 @@ class DaskTable(Table):
         """
         self = cls()
 
-        f = h5py.File(filename, "r")
+        self.__h5file = f = h5py.File(filename, "r")
 
         if "X" in f:
             self._X = da.from_array(f["X"])
@@ -66,6 +66,9 @@ class DaskTable(Table):
         cls._init_ids(self)
 
         return self
+
+    def close(self):
+        self.__h5file.close()
 
     def set_weights(self, weight=1):
         raise NotImplementedError()
