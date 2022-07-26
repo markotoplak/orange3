@@ -3,6 +3,7 @@ from functools import lru_cache
 from xml.sax.saxutils import escape
 
 import numpy as np
+import dask
 
 from AnyQt.QtCore import Qt, QPointF, QSize, Signal, QRectF
 from AnyQt.QtGui import QColor
@@ -13,6 +14,7 @@ import pyqtgraph as pg
 from orangewidget.utils.visual_settings_dlg import VisualSettingsDialog, \
     KeyType, ValueType
 
+from Orange.data.dask import DaskTable
 from Orange.data import Table, DiscreteVariable, ContinuousVariable, \
     StringVariable, Variable
 from Orange.widgets import gui
@@ -523,13 +525,20 @@ class OWBarPlot(OWWidget):
 
     def check_data(self):
         self.clear_messages()
-        if self.data is not None:
-            if self.data.domain.has_continuous_attributes(True, True) == 0:
-                self.Error.no_cont_features()
-                self.data = None
-            elif len(self.data) > MAX_INSTANCES:
-                self.Information.too_many_instances()
-                self.data = self.data[:MAX_INSTANCES]
+        if self.data is None:
+            return
+
+        if self.data.domain.has_continuous_attributes(True, True) == 0:
+            self.Error.no_cont_features()
+            self.data = None
+            return
+
+        if len(self.data) > MAX_INSTANCES:
+            self.Information.too_many_instances()
+            self.data = self.data[:MAX_INSTANCES]
+
+        if self.data.is_dask_table():
+            self.data = DaskTable.compute(self.data)
 
     def init_attr_values(self):
         domain = self.data.domain if self.data else None
