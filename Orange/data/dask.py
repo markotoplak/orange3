@@ -1,6 +1,7 @@
 import pickle
 
 import h5py
+import dask
 import dask.array as da
 import numpy as np
 import pandas
@@ -102,6 +103,17 @@ class DaskTable(Table):
         selection = self._values_filter_to_indicator(filter)
         return self[selection.compute()]
 
+    @classmethod
+    def compute(cls, source: 'DaskTable') -> 'DaskTable':
+        self = cls()
+        self.X, self.Y = dask.compute(source.X, source.Y)
+        self.metas = source.metas
+        self.domain = source.domain
+        self.W = source.W
+        self.ids = np.array(source.ids)
+        self.name = getattr(source, 'name', '')
+        self.attributes = getattr(source, 'attributes', {})
+        return self
     def _compute_basic_stats(self, columns=None,
                              include_metas=False, compute_variance=False):
         rr = []
