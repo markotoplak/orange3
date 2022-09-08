@@ -31,7 +31,7 @@ from Orange.data import (
     DomainConversion)
 from Orange.data.util import SharedComputeValue, \
     assure_array_dense, assure_array_sparse, \
-    assure_column_dense, assure_column_sparse, get_unique_names_duplicates
+    assure_column_dense, assure_column_sparse, get_unique_names_duplicates, SubarrayComputeValue
 from Orange.misc.collections import frozendict
 from Orange.statistics.util import bincount, countnans, contingency, \
     stats as fast_stats, sparse_has_implicit_zeros, sparse_count_implicit_zeros, \
@@ -312,6 +312,10 @@ class _ArrayConversion:
             else:
                 sourceri = source[row_indices]
 
+
+        add_new = False
+
+
         shared_cache = _thread_local.conversion_cache
         for i, col in enumerate(self.src_cols):
             if col is None:
@@ -319,7 +323,10 @@ class _ArrayConversion:
                     np.full((n_rows, 1), self.variables[i].Unknown)
                 )
             elif not isinstance(col, Integral):
-                if isinstance(col, SharedComputeValue):
+                if isinstance(col, SubarrayComputeValue) and not self.is_sparse:
+                    add_new = col
+                    continue
+                elif isinstance(col, SharedComputeValue):
                     shared = _idcache_restore(shared_cache, (col.compute_shared, source))
                     if shared is None:
                         shared = col.compute_shared(sourceri)
@@ -348,6 +355,11 @@ class _ArrayConversion:
                 data.append(col_array.reshape(-1, 1))
             else:
                 out[target_indices, i] = col_array
+
+        # TODO just for performance measurement
+        if add_new is not False:
+            #print(add_new.compute_shared(sourceri, np.arange(len(self.src_cols))).shape)
+            out[target_indices, :] = add_new.compute_shared(sourceri, np.arange(len(self.src_cols)))
 
         if self.is_sparse:
             # creating csr directly would need plenty of manual work which
