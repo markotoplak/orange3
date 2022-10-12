@@ -356,7 +356,8 @@ class _ArrayConversion:
             else:
                 out[target_indices, i] = col_array
 
-        # TODO just for performance measurement
+        # TODO just for performance measurement,
+        # assumes all features are the same and all should go here
         if add_new is not False:
             #print(add_new.compute_shared(sourceri, np.arange(len(self.src_cols))).shape)
             out[target_indices, :] = add_new.compute_shared(sourceri, np.arange(len(self.src_cols)))
