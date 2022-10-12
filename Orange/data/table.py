@@ -360,7 +360,10 @@ class _ArrayConversion:
         # assumes all features are the same and all should go here
         if add_new is not False:
             #print(add_new.compute_shared(sourceri, np.arange(len(self.src_cols))).shape)
-            out[target_indices, :] = add_new.compute_shared(sourceri, np.arange(len(self.src_cols)))
+            if not self.is_dask:
+                out[target_indices, :] = add_new.compute_shared(sourceri, np.arange(len(self.src_cols)))
+            elif self.is_dask:
+                data.append(add_new.compute_shared(sourceri, np.arange(len(self.src_cols))))
 
         if self.is_sparse:
             # creating csr directly would need plenty of manual work which
