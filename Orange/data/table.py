@@ -247,6 +247,8 @@ class _ArrayConversion:
         self.dtype = dtype
         self.row_selection_needed = any(not isinstance(x, Integral)
                                         for x in src_cols)
+        self.transform_groups = self._create_groups(source_domain)
+        print("TG", self.transform_groups)
 
     def _can_copy_all(self, src_cols, source_domain):
         n_src_attrs = len(source_domain.attributes)
@@ -258,6 +260,49 @@ class _ArrayConversion:
         if all(isinstance(x, Integral) and x >= n_src_attrs
                for x in src_cols):
             return "Y"
+
+    def _create_groups(self, source_domain):
+        n_src_attrs = len(source_domain.attributes)
+
+        groups = []
+
+        def add_group(desc, group):
+            if not group:
+                return  # skip adding empty groups
+            if desc[0] in {"X", "metas", "Y", "subarray"}:
+                group = _optimize_indices(group, 10e30)  # maxlen should not be an issue
+            groups.append((desc, group))
+
+        current_group = []
+        current_desc = None
+        for i, col in enumerate(self.src_cols):
+            if col is None:
+                desc = ("unknown", self.variables[i].Unknown)
+            elif not isinstance(col, Integral):
+                if isinstance(col, SubarrayComputeValue):
+                    desc = ("subarray", col.compute_shared)
+                    col = col.index
+                elif isinstance(col, SharedComputeValue):
+                    desc = ("shared", col.compute_shared)
+                else:
+                    desc = ("separate", i)  # add index to guarantee non-repetition
+            elif col < 0:
+                desc = ("metas",)
+            elif col < n_src_attrs:
+                desc = ("X",)
+            else:
+                desc = ("Y",)
+
+            if current_desc == desc:
+                current_group.append(col)
+            else:
+                add_group(current_desc, current_group)
+                current_group = [col]
+                current_desc = desc
+
+        add_group(current_desc, current_group)
+
+        return groups
 
     def get_subarray(self, source, row_indices, n_rows):
         if not len(self.src_cols):
@@ -315,26 +360,25 @@ class _ArrayConversion:
 
         add_new = False
 
-
         shared_cache = _thread_local.conversion_cache
-        for i, col in enumerate(self.src_cols):
-            if col is None:
+        for desc, cols in enumerate(self.transform_groups):
+            if desc[0] == "unknown":
                 col_array = match_density(
-                    np.full((n_rows, 1), self.variables[i].Unknown)
+                    np.full((n_rows, len(cols)), desc[1])
                 )
-            elif not isinstance(col, Integral):
-                if isinstance(col, SubarrayComputeValue) and not self.is_sparse:
-                    add_new = col
-                    continue
-                elif isinstance(col, SharedComputeValue):
-                    shared = _idcache_restore(shared_cache, (col.compute_shared, source))
-                    if shared is None:
-                        shared = col.compute_shared(sourceri)
-                        _idcache_save(shared_cache, (col.compute_shared, source), shared)
-                    col_array = match_density(
-                        _compute_column(col, sourceri, shared_data=shared))
+            elif desc[0] in {"subarray", "shared"}:
+                compute_shared = desc[1]
+                shared = _idcache_restore(shared_cache, (compute_shared, source))
+                if shared is None:
+                    shared = compute_shared(sourceri)
+                    _idcache_save(shared_cache, (compute_shared, source), shared)
+                if desc[0] == "shared":
+                    for col in cols:
+                    col_array = match_density(col(sourceri, shared_data=shared))
                 else:
-                    col_array = match_density(_compute_column(col, sourceri))
+
+            elif desc[0] == "separate":
+                col_array = match_density(cols[0](sourceri))
             elif col < 0:
                 col_array = match_density(
                     source.metas[row_indices, -1 - col]
@@ -2475,6 +2519,7 @@ def _subarray(arr, rows, cols):
         # so they need to be reshaped to produce an open mesh
         return arr[np.ix_(rows, cols)]
 
+
 def _optimize_indices(indices, maxlen):
     """
     Convert integer indices to slice if possible. It only converts increasing
@@ -2482,7 +2527,7 @@ def _optimize_indices(indices, maxlen):
     Only convert valid ends so that invalid ranges will still raise
     an exception.
 
-    Allows numpy to reuse the data array, because it defaults to copying
+    Allows numpy to reuse the data array, because numpy defaults to copying
     if given indices.
 
     Parameters
