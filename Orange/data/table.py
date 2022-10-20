@@ -19,6 +19,7 @@ import numpy as np
 import dask.array as da
 
 import dask.array
+import scipy.sparse
 
 from scipy import sparse as sp
 from scipy.sparse import issparse, csc_matrix
@@ -248,7 +249,7 @@ class _ArrayConversion:
         self.row_selection_needed = any(not isinstance(x, Integral)
                                         for x in src_cols)
         self.transform_groups = self._create_groups(source_domain)
-        print("TG", self.transform_groups)
+        #print("TG", self.transform_groups)
 
     def _can_copy_all(self, src_cols, source_domain):
         n_src_attrs = len(source_domain.attributes)
@@ -288,10 +289,12 @@ class _ArrayConversion:
                     desc = ("separate", i)  # add index to guarantee non-repetition
             elif col < 0:
                 desc = ("metas",)
+                col = -1 - col
             elif col < n_src_attrs:
                 desc = ("X",)
             else:
                 desc = ("Y",)
+                col = col - n_src_attrs
 
             if current_desc == desc:
                 current_group.append(col)
@@ -330,15 +333,7 @@ class _ArrayConversion:
         assert arr.ndim == 2 or self.subarray_from == "Y" and arr.ndim == 1
         return arr
 
-    def get_columns(self, source, row_indices, n_rows, out=None, target_indices=None):
-        n_src_attrs = len(source.domain.attributes)
-
-        data = []
-        sp_col = []
-        sp_row = []
-        match_density = (
-            assure_column_sparse if self.is_sparse else assure_column_dense
-        )
+    def prepare_parts(self, source, row_indices, n_rows):
 
         # converting to csc before instead of each column is faster
         # do not convert if not required
@@ -357,67 +352,77 @@ class _ArrayConversion:
             else:
                 sourceri = source[row_indices]
 
-
-        add_new = False
+        def _hstack(t):
+            if isinstance(t[0], np.ndarray):
+                return np.hstack(t)
+            elif sp.issparse(t[0]):
+                return scipy.sparse.hstack(t)
+            else: # dask
+                return da.hstack(t)
 
         shared_cache = _thread_local.conversion_cache
-        for desc, cols in enumerate(self.transform_groups):
+        for i, (desc, cols) in enumerate(self.transform_groups):
+            #print("IT", desc, cols)
             if desc[0] == "unknown":
-                col_array = match_density(
-                    np.full((n_rows, len(cols)), desc[1])
-                )
+                #print("unknown", desc)
+                yield np.full((n_rows, len(cols)), desc[1])
             elif desc[0] in {"subarray", "shared"}:
                 compute_shared = desc[1]
-                shared = _idcache_restore(shared_cache, (compute_shared, source))
+                shared = _idcache_restore(shared_cache, desc[1:] + (source,))
                 if shared is None:
-                    shared = compute_shared(sourceri)
-                    _idcache_save(shared_cache, (compute_shared, source), shared)
+                    if desc[0] == "shared":
+                        shared = compute_shared(sourceri)
+                    else:
+                        shared = compute_shared(sourceri, cols)
+                    _idcache_save(shared_cache, desc[1:] + (source,), shared)
                 if desc[0] == "shared":
-                    for col in cols:
-                    col_array = match_density(col(sourceri, shared_data=shared))
-                else:
+                    t = []
+                    for c in cols:
+                        t.append(c(sourceri, shared_data=shared).reshape(-1, 1))
+                    yield _hstack(t)
+                else: # subarray
+                    yield shared
 
             elif desc[0] == "separate":
-                col_array = match_density(cols[0](sourceri))
-            elif col < 0:
-                col_array = match_density(
-                    source.metas[row_indices, -1 - col]
-                )
-            elif col < n_src_attrs:
-                col_array = match_density(X[row_indices, col])
+                #print("separate", cols)
+                yield cols[0](sourceri).reshape(-1, 1)
+
+            elif desc[0] == "metas":
+                #print("metas", cols)
+                yield _sa(source.metas, row_indices, cols)
+
+            elif desc[0] == "X":
+                #print("X", cols)
+                yield _sa(X, row_indices, cols)
+
             else:
-                col_array = match_density(
-                    Y[row_indices, col - n_src_attrs]
-                )
+                #print("Y", cols)
+                yield _sa(Y, row_indices, cols)
+
+    def get_columns(self, source, row_indices, n_rows, out=None, target_indices=None):
+
+        data = []
+
+        match_density_array = (
+            assure_array_sparse if self.is_sparse else assure_array_dense
+        )
+
+        cpos = 0
+        for col_array in self.prepare_parts(source, row_indices, n_rows):
+
+            col_array = match_density_array(col_array)
+            cols, rows = col_array.shape
 
             if self.is_sparse:
-                # col_array should be coo matrix
-                data.append(col_array.data)
-                sp_col.append(np.full(len(col_array.data), i))
-                sp_row.append(col_array.indices)  # row indices should be same
+                data.append(col_array)  # already csc as done by assure_array_sparse
             elif self.is_dask:
-                data.append(col_array.reshape(-1, 1))
+                data.append(col_array)
             else:
-                out[target_indices, i] = col_array
-
-        # TODO just for performance measurement,
-        # assumes all features are the same and all should go here
-        if add_new is not False:
-            #print(add_new.compute_shared(sourceri, np.arange(len(self.src_cols))).shape)
-            if not self.is_dask:
-                out[target_indices, :] = add_new.compute_shared(sourceri, np.arange(len(self.src_cols)))
-            elif self.is_dask:
-                data.append(add_new.compute_shared(sourceri, np.arange(len(self.src_cols))))
+                out[target_indices, slice(cpos, cpos+rows)] = col_array
+            cpos += rows
 
         if self.is_sparse:
-            # creating csr directly would need plenty of manual work which
-            # would probably slow down the process - conversion coo to csr
-            # is fast
-            out = sp.coo_matrix(
-                (np.hstack(data), (np.hstack(sp_row), np.hstack(sp_col))),
-                shape=(n_rows, len(self.src_cols)),
-                dtype=self.dtype
-            )
+            out = scipy.sparse.hstack(data)
             out = out.tocsr()
         elif self.is_dask:
             out = dask.array.hstack(data)
@@ -2512,7 +2517,11 @@ def _subarray(arr, rows, cols):
     if arr.ndim == 1:
         return arr[rows]
     cols = _optimize_indices(cols, arr.shape[1])
-    if isinstance(rows, slice) or isinstance(cols, slice):
+    return _sa(arr, rows, cols)
+
+
+def _sa(arr, rows, cols):
+    if isinstance(rows, slice) or isinstance(cols, slice) or rows is ... or cols is ...:
         return arr[rows, cols]
     else:
         # rows and columns are independent selectors,
