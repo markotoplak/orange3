@@ -25,8 +25,9 @@ class SubarrayNorms:
         if sp.issparse(X):
             if np.any(offsets != 0):
                 raise ValueError('Normalization does not work for sparse data.')
-
-        return (X-offsets.reshape(1, -1))*factors.reshape(1, -1)
+            return X.multiply(factors.reshape(1, -1))  # the "-" operation return dense
+        else:
+            return (X-offsets.reshape(1, -1)) * (factors.reshape(1, -1))
 
 
 def compress_norm_to_subarray(domain):
