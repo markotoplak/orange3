@@ -42,7 +42,9 @@ def compress_norm_to_subarray(domain):
             st.source_vars.append(tr.variable)
             st.offsets.append(tr.offset)
             st.factors.append(tr.factor)
-            a = a.copy(compute_value=SubarrayComputeValue(st, ind))
+            cv = SubarrayComputeValue(st, ind)
+            cv.variable = tr.variable  # something that scorers expect
+            a = a.copy(compute_value=cv)
             ind += 1
         new_atts.append(a)
 
