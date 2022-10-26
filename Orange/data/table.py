@@ -366,22 +366,23 @@ class _ArrayConversion:
             if desc[0] == "unknown":
                 #print("unknown", desc)
                 yield np.full((n_rows, len(cols)), desc[1])
-            elif desc[0] in {"subarray", "shared"}:
+            elif desc[0] == "shared":
                 compute_shared = desc[1]
                 shared = _idcache_restore(shared_cache, desc[1:] + (source,))
                 if shared is None:
-                    if desc[0] == "shared":
-                        shared = compute_shared(sourceri)
-                    else:
-                        shared = compute_shared(sourceri, cols)
+                    shared = compute_shared(sourceri)
                     _idcache_save(shared_cache, desc[1:] + (source,), shared)
-                if desc[0] == "shared":
-                    t = []
-                    for c in cols:
-                        t.append(c(sourceri, shared_data=shared).reshape(-1, 1))
-                    yield _hstack(t)
-                else: # subarray
-                    yield shared
+                t = []
+                for c in cols:
+                    t.append(c(sourceri, shared_data=shared).reshape(-1, 1))
+                yield _hstack(t)
+            elif desc[0] == "subarray":
+                # TODO for operation such as PCA non-caching of subarrays would yield
+                # repeated computation of all subarray columns were not together.
+                # for operations souch as normalization it does not mattter
+                compute_shared = desc[1]
+                shared = compute_shared(sourceri, cols)
+                yield shared
 
             elif desc[0] == "separate":
                 #print("separate", cols)
@@ -411,15 +412,15 @@ class _ArrayConversion:
         for col_array in self.prepare_parts(source, row_indices, n_rows):
 
             col_array = match_density_array(col_array)
-            cols, rows = col_array.shape
+            rows, cols = col_array.shape
 
             if self.is_sparse:
                 data.append(col_array)  # already csc as done by assure_array_sparse
             elif self.is_dask:
                 data.append(col_array)
             else:
-                out[target_indices, slice(cpos, cpos+rows)] = col_array
-            cpos += rows
+                out[target_indices, slice(cpos, cpos+cols)] = col_array
+            cpos += cols
 
         if self.is_sparse:
             out = scipy.sparse.hstack(data)
