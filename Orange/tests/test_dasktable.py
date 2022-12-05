@@ -7,7 +7,7 @@ import numpy.testing
 import dask.array as da
 
 from Orange.data import Table, Domain
-from Orange.data.dask import DaskTable, dask_stats
+from Orange.data.dask import DaskTable, dask_stats, DaskRowInstance
 from Orange.statistics.basic_stats import DomainBasicStats
 from Orange.tests import named_file
 
@@ -60,6 +60,24 @@ class TableTestCase(unittest.TestCase):
         numpy.testing.assert_equal(dasktable.X, table.X)
         numpy.testing.assert_equal(dasktable.Y, table.Y)
         numpy.testing.assert_equal(dasktable.metas, table.metas)
+
+    def test_instance(self):
+        iris = temp_dasktable("iris")
+        with self.assertWarns(expected_warning=UserWarning):
+            instance = iris[1]
+        self.assertIsInstance(instance, DaskRowInstance)
+
+    def test_str(self):
+        iris = temp_dasktable("iris")
+        iris[0]
+        with self.assertWarns(expected_warning=UserWarning):
+            self.assertEqual("[5.1, 3.5, 1.4, 0.2 | Iris-setosa]", str(iris[0]))
+        with self.assertWarns(expected_warning=UserWarning):
+            table_str = str(iris)
+        lines = table_str.split('\n')
+        self.assertEqual(150, len(lines))
+        self.assertEqual("[[5.1, 3.5, 1.4, 0.2 | Iris-setosa],", lines[0])
+        self.assertEqual(" [5.9, 3.0, 5.1, 1.8 | Iris-virginica]]", lines[-1])
 
     def test_compute(self):
         zoo = Table('zoo')
