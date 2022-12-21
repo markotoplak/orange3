@@ -350,6 +350,18 @@ class _ArrayConversion:
             out = dask.array.hstack(data)
         return out
 
+    def join_parts(self, parts):
+        if self.is_dask:
+            return dask.array.vstack(parts)
+        elif self.is_sparse:
+            return sp.vstack(parts)
+        else:
+            return parts
+
+    def add_part(self, parts, part):
+        if self.is_sparse or self.is_dask:
+            parts[self.target].append(part)
+
 
 class _FromTableConversion:
 
@@ -803,8 +815,7 @@ class Table(Sequence, Storage):
                             out = array_conv.get_columns(source, source_indices, part_rows,
                                                          parts[array_conv.target],
                                                          target_indices)
-                            if array_conv.is_sparse or array_conv.is_dask:
-                                parts[array_conv.target].append(out)
+                            array_conv.add_part(parts[array_conv.target], out)
 
                         i_done += PART
 
@@ -813,14 +824,8 @@ class Table(Sequence, Storage):
                             _thread_local.conversion_cache = {}
 
                     for array_conv in table_conversion.columnwise:
-                        cparts = parts[array_conv.target]
-                        if array_conv.is_dask:
-                            out = dask.array.vstack(cparts)
-                        elif array_conv.is_sparse:
-                            out = sp.vstack(cparts)
-                        else:
-                            out = cparts
-                        setattr(self, array_conv.target, out)
+                        setattr(self, array_conv.target,
+                                array_conv.join_parts(parts[array_conv.target]))
 
                 self.W = source.W[row_indices]
                 self.name = getattr(source, 'name', '')
