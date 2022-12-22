@@ -16,6 +16,7 @@ from Orange.widgets.tests.base import (
     WidgetTest, WidgetOutputsTestMixin, datasets, ProjectionWidgetTestMixin
 )
 from Orange.widgets.tests.utils import simulate, excepthook_catch
+from Orange.tests.test_dasktable import temp_dasktable
 from Orange.widgets.utils.colorpalettes import DefaultRGBColors
 from Orange.widgets.visualize.owscatterplot import (
     OWScatterPlot, ScatterPlotVizRank, OWScatterPlotGraph)
@@ -1227,6 +1228,12 @@ class TestOWScatterPlot(WidgetTest, ProjectionWidgetTestMixin,
         self.widget.set_visual_settings(key, value)
         for item in graph.reg_line_items:
             self.assertEqual(item.pen.width(), 10)
+
+
+class TestOWScatterPlotWithDask(TestOWScatterPlot):
+
+    def init(self):
+        self.data = temp_dasktable("iris")
 
 
 if __name__ == "__main__":

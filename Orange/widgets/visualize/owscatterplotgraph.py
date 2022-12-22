@@ -1,6 +1,7 @@
 import sys
 import itertools
 import warnings
+import random
 from typing import Callable
 from xml.sax.saxutils import escape
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from pyqtgraph.graphicsItems.ScatterPlotItem import Symbols
 from pyqtgraph.graphicsItems.LegendItem import LegendItem as PgLegendItem
 from pyqtgraph.graphicsItems.TextItem import TextItem
 
+from Orange.data.dask import DaskTable
 from Orange.preprocess.discretize import _time_binnings
 from Orange.util import utc_from_timestamp
 from Orange.widgets import gui
@@ -504,6 +506,7 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
     show_legend = Setting(True)
     class_density = Setting(False)
     jitter_size = Setting(0)
+    sample_size = Setting(1000)
 
     resolution = 256
 
@@ -548,7 +551,6 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
 
         self.n_valid = 0
         self.n_shown = 0
-        self.sample_size = None
         self.sample_indices = None
 
         self.palette = None
@@ -571,9 +573,155 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
         self.view_box.sigTransformChanged.connect(self.update_density)
         self.view_box.sigRangeChangedManually.connect(self.update_labels)
 
-        self.timer = None
+        self.x1, self.x2 = None, None
+        self.y1, self.y2 = None, None
 
+        def sample_points_in_current_view():
+            if not isinstance(self.master.data, DaskTable):
+                return
+            x_data = self.master.cached_x_data
+            y_data = self.master.cached_y_data
+            min_x, max_x = np.min(x_data), np.max(x_data)
+            min_y, max_y = np.min(y_data), np.max(y_data)
+
+            if self.x1 is None or self.x2 is None or \
+                    self.y1 is None or self.y2 is None:
+                self.x1, self.x2 = min_x, max_x
+                self.y1, self.y2 = min_y, max_y
+
+            # Current graph view range
+            new_x1, new_x2, new_y1, new_y2 = self._get_current_view_range()
+
+            # Data points in previous view range
+            mask_old = np.flatnonzero(
+                ((x_data > self.x1) & (x_data < self.x2)) &
+                ((y_data > self.y1) & (y_data < self.y2))
+            )
+
+            # Data points in new view range
+            mask_new = np.flatnonzero(
+                ((x_data > new_x1) & (x_data < new_x2)) &
+                ((y_data > new_y1) & (y_data < new_y2))
+            )
+
+            # Find the differance of data points between current and previous views
+            sample_indices = set(self.sample_indices)
+            mask_old = set(mask_old)
+            mask_new = set(mask_new)
+
+
+            is_zoom_in = all((new_x1 > self.x1,
+                              new_x2 < self.x2,
+                              new_y1 > self.y1,
+                              new_y2 < self.y2))
+
+            # is_zoom_out = all((new_x1 < self.x1,
+            #                    new_x2 > self.x2,
+            #                    new_y1 < self.y1,
+            #                    new_y2 > self.y2))
+
+            # Update previous view ranges
+            self.x1, self.x2 = new_x1, new_x2
+            self.y1, self.y2 = new_y1, new_y2
+
+            if is_zoom_in:
+                # remove currently sampled data points that got zoomed out.
+                zoomed_out_samples = sample_indices & (mask_old - mask_new)
+                samples_to_keep = sample_indices - zoomed_out_samples
+
+                # data points that we should sample now must not already be sampled
+                new_sample_candidates = mask_new - samples_to_keep
+                k = self.sample_size - len(samples_to_keep)
+
+                # sample size iz larger than number of available data
+                if len(mask_new) < self.sample_size:
+                    return
+
+                if len(new_sample_candidates) > k:
+                    new_sample_candidates = set(
+                        random.sample(new_sample_candidates, k=k))
+
+                # join currently sampled data points with proportion of new one in the
+                # zoomed in area
+                self.sample_indices = np.array(
+                    list(samples_to_keep | new_sample_candidates))
+
+            else:
+                diff = mask_new - mask_old
+
+                # Sampled and non-sampled data points in the overlapped area.
+                intersect_data_points = mask_old & mask_new
+
+                # Data points that are already sampled and are in the overlapped area.
+                intersect_sampled_points = intersect_data_points & sample_indices
+
+                # Non-sampled datapoints in the overlapped area.
+                intersect_non_sampled_points = intersect_data_points - sample_indices
+
+                # sample size iz larger than number of available data
+                if len(mask_new) < self.sample_size:
+                    return
+
+                if not len(diff):
+
+                    # do nothing
+                    if len(intersect_sampled_points) == self.sample_size:
+                        return
+
+                    # add remaining data samples
+                    self.sample_indices = np.array(list(intersect_sampled_points | set(random.sample(intersect_non_sampled_points, k=self.sample_size - len(intersect_sampled_points)))))
+
+                else:
+                    # size ratio between arrays
+                    ratio = len(intersect_data_points) / len(diff)
+
+                    num_of_samples_overlap = round(ratio / (ratio + 1) * self.sample_size)
+                    num_of_samples_diff = self.sample_size - num_of_samples_overlap
+
+                    m = num_of_samples_overlap - len(intersect_sampled_points)
+                    if m > 0:
+                        overlap_samples = intersect_sampled_points | set(random.sample(intersect_non_sampled_points, k=m))
+                        new_samples = set(random.sample(diff, k=num_of_samples_diff))
+                    else:
+                        to_remove = set(random.sample(intersect_sampled_points, k=abs(m)))
+                        overlap_samples = intersect_sampled_points - to_remove
+                        new_samples = set(random.sample(diff, k=num_of_samples_diff))
+
+                    self.sample_indices = np.array(list(overlap_samples | new_samples))
+
+            self.clear()
+            self.update_coordinates()
+            self.update_point_props()
+
+        self._proxy_sigRangeChanged = pg.SignalProxy(
+            # self.plot_widget.plotItem.sigRangeChangedManually, slot=test, delay=0.5
+            self.view_box.sigRangeChangedManually, slot=sample_points_in_current_view, delay=0.4
+        )
+        self.timer = None
         self.parameter_setter = ScatterBaseParameterSetter(self)
+
+    def resample_current_view_range(self):
+        x1, x2, y1, y2 = self._get_current_view_range()
+        x_data = self.master.cached_x_data
+        y_data = self.master.cached_y_data
+        mask = np.flatnonzero(
+            ((x_data > x1) & (x_data < x2)) &
+            ((y_data > y1) & (y_data < y2))
+        )
+
+        self.sample_indices = None
+        self._create_sample(mask)
+        self.clear()
+        self.update_coordinates()
+        self.update_point_props()
+
+    def _get_current_view_range(self):
+        x_axis, y_axis = self.view_box.state['viewRange']
+
+        x1, x2 = x_axis
+        y1, y2 = y_axis
+
+        return x1, x2, y1, y2
 
     def _create_legend(self, anchor):
         legend = LegendItem()
@@ -778,7 +926,10 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
             self.n_valid = self.n_shown = 0
             return None, None
         self.n_valid = len(x)
-        self._create_sample()
+
+        if self.sample_indices is None:
+            self._create_sample()
+
         x = self._filter_visible(x)
         y = self._filter_visible(y)
         # Jittering after sampling is OK if widgets do not change the sample
@@ -790,7 +941,7 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
         x, y = self.jitter_coordinates(x, y)
         return x, y
 
-    def _create_sample(self):
+    def _create_sample(self, mask=None):
         """
         Create a random sample if the data is larger than the set sample size
         """
@@ -798,9 +949,11 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
         if self.sample_size is not None \
                 and self.sample_indices is None \
                 and self.n_valid != self.n_shown:
-            random = np.random.RandomState(seed=0)
+
+            random = np.random.RandomState()
             self.sample_indices = random.choice(
-                self.n_valid, self.n_shown, replace=False)
+                mask if mask is not None else self.n_valid, self.n_shown, replace=False)
+
             # TODO: Is this really needed?
             np.sort(self.sample_indices)
 
@@ -838,8 +991,7 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
         x, y = self.get_coordinates()
         if x is None or len(x) == 0:
             return
-
-        self._reset_view(x, y)
+        # self._reset_view(x, y)
         if self.scatterplot_item is None:
             if self.sample_indices is None:
                 indices = np.arange(self.n_valid)
