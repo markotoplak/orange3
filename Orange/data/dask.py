@@ -29,10 +29,10 @@ class DaskRowInstance(RowInstance):
 
 class _ArrayConversionDask(_ArrayConversion):
 
-    def join_parts(self, parts):
+    def join_partial_results(self, parts):
         if self.is_dask:
             return dask.array.vstack(parts)
-        return super().join_parts(self)
+        return super().join_partial_results(self)
 
     def prepare_column(self, col_array):
         if self.is_dask:
@@ -54,8 +54,8 @@ class _FromTableConversionDask(_FromTableConversion):
         self.X.is_dask = True
         self.Y.is_dask = True
         self.metas.is_dask = False
-        self.X.work_inplace = False
-        self.Y.work_inplace = False
+        self.X.results_inplace = False
+        self.Y.results_inplace = False
 
 
 class DaskTable(Table):

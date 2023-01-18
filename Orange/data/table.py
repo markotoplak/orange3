@@ -223,7 +223,7 @@ class _ArrayConversion:
         self.target = target
         self.src_cols = src_cols
         self.is_sparse = is_sparse
-        self.work_inplace = not is_sparse
+        self.results_inplace = not is_sparse
         self.subarray_from = self._can_copy_all(src_cols, source_domain)
         self.variables = variables
         dtype = np.float64
@@ -324,12 +324,12 @@ class _ArrayConversion:
                     Y[row_indices, col - n_src_attrs]
                 )
 
-            if self.work_inplace:
+            if self.results_inplace:
                 out[target_indices, i] = col_array
             else:
                 data.append(self.prepare_column(col_array))
 
-        if self.work_inplace:
+        if self.results_inplace:
             return out
         else:
             return self.join_columns(data)
@@ -357,27 +357,29 @@ class _ArrayConversion:
             )
             return out.tocsr()
 
-    def join_parts(self, parts):
+    def join_partial_results(self, parts):
         if self.is_sparse:
             return sp.vstack(parts)
         else:
             return parts
 
-    def init_part(self, n_rows):
-        if not self.work_inplace:
-            return []
+    def init_partial_results(self, n_rows):
+        if not self.results_inplace:
+            return []  # list to store partial results
         else:  # a dense numpy array
             # F-order enables faster writing to the array while accessing and
             # matrix operations work with same speed (e.g. dot)
             return np.zeros((n_rows, len(self.src_cols)),
                             order="F", dtype=self.dtype)
 
-    def add_part(self, parts, part):
-        if not self.work_inplace:
+    def add_partial_result(self, parts, part):
+        if not self.results_inplace:
             parts[self.target].append(part)
 
 
 class _FromTableConversion:
+
+    max_rows_at_once = 5000
 
     _array_conversion_class = _ArrayConversion
 
@@ -405,8 +407,6 @@ class _FromTableConversion:
                 self.subarray.append(part)
 
     def convert(self, source, row_indices, clear_cache_after_part):
-        PART = 5000
-
         n_rows = _selection_length(row_indices, len(source))
 
         res = {}
@@ -418,9 +418,9 @@ class _FromTableConversion:
         parts = {}
 
         for array_conv in self.columnwise:
-            parts[array_conv.target] = array_conv.init_part(n_rows)
+            parts[array_conv.target] = array_conv.init_partial_results(n_rows)
 
-        if n_rows <= PART:
+        if n_rows <= self.max_rows_at_once:
             for array_conv in self.columnwise:
                 out = array_conv.get_columns(source, row_indices,
                                              parts[array_conv.target],
@@ -430,7 +430,7 @@ class _FromTableConversion:
             i_done = 0
 
             while i_done < n_rows:
-                target_indices = slice(i_done, min(n_rows, i_done + PART))
+                target_indices = slice(i_done, min(n_rows, i_done + self.max_rows_at_once))
                 source_indices = _select_from_selection(row_indices, target_indices,
                                                        len(source))
 
@@ -439,9 +439,9 @@ class _FromTableConversion:
                     out = array_conv.get_columns(source, source_indices,
                                                  parts[array_conv.target],
                                                  target_indices)
-                    array_conv.add_part(parts[array_conv.target], out)
+                    array_conv.add_partial_result(parts[array_conv.target], out)
 
-                i_done += PART
+                i_done += self.max_rows_at_once
 
                 # clear cache after a part is done
                 if clear_cache_after_part:
@@ -449,7 +449,7 @@ class _FromTableConversion:
 
             for array_conv in self.columnwise:
                 res[array_conv.target] = \
-                    array_conv.join_parts(parts[array_conv.target])
+                    array_conv.join_partial_results(parts[array_conv.target])
 
         return res["X"], res["Y"], res["metas"]
 
