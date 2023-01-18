@@ -355,7 +355,7 @@ class _ArrayConversion:
                 shape=(n_rows, len(self.src_cols)),
                 dtype=self.dtype
             )
-            return out
+            return out.tocsr()
 
     def join_parts(self, parts):
         if self.is_sparse:
