@@ -188,3 +188,24 @@ class TableTestCase(unittest.TestCase):
         self.assertEqual(150, len(lines))
         self.assertEqual("[[5.1, 3.5, 1.4, 0.2 | Iris-setosa],", lines[0])
         self.assertEqual(" [5.9, 3.0, 5.1, 1.8 | Iris-virginica]]", lines[-1])
+
+    def test_convert_subarray(self):
+        zoo = temp_dasktable("zoo")
+        domain = Domain(zoo.domain.attributes[:3], zoo.domain.class_vars, zoo.domain.metas)
+        zoos = zoo.transform((domain))
+        np.testing.assert_array_equal(zoo.X[:,:3], zoos.X)
+        np.testing.assert_array_equal(zoo.Y, zoos.Y)
+        np.testing.assert_array_equal(zoo.metas, zoos.metas)
+        self.assertIsInstance(zoos.X, da.Array)
+        self.assertIsInstance(zoos.Y, da.Array)
+        self.assertIsInstance(zoos.metas, np.ndarray)
+
+    def test_convert_transformation(self):
+        iris = temp_dasktable("iris")
+        at_sum = ContinuousVariable(name="sum", compute_value=lambda data: data.X.sum(axis=1))
+        domain = Domain([at_sum], iris.domain.class_vars)
+        iris_sum = iris.transform(domain)
+        np.testing.assert_array_equal(iris_sum.X[:,0], iris.X.sum(axis=1))
+        self.assertIsInstance(iris_sum.X, da.Array)
+        self.assertIsInstance(iris_sum.Y, da.Array)
+        self.assertIsInstance(iris_sum.metas, np.ndarray)

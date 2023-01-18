@@ -17,8 +17,6 @@ from typing import List, TYPE_CHECKING, Union
 import bottleneck as bn
 import numpy as np
 
-import dask.array
-
 from scipy import sparse as sp
 from scipy.sparse import issparse, csc_matrix
 
@@ -225,7 +223,7 @@ class _ArrayConversion:
         self.target = target
         self.src_cols = src_cols
         self.is_sparse = is_sparse
-        self.is_dask = False
+        self.work_inplace = not is_sparse
         self.subarray_from = self._can_copy_all(src_cols, source_domain)
         self.variables = variables
         dtype = np.float64
@@ -278,8 +276,6 @@ class _ArrayConversion:
         n_src_attrs = len(source.domain.attributes)
 
         data = []
-        sp_col = []
-        sp_row = []
         match_density = (
             assure_column_sparse if self.is_sparse else assure_column_dense
         )
@@ -328,40 +324,47 @@ class _ArrayConversion:
                     Y[row_indices, col - n_src_attrs]
                 )
 
-            if self.is_sparse:
-                # col_array should be coo matrix
-                data.append(col_array.data)
-                sp_col.append(np.full(len(col_array.data), i))
-                sp_row.append(col_array.indices)  # row indices should be same
-            elif self.is_dask:
-                data.append(col_array.reshape(-1, 1))
-            else:
+            if self.work_inplace:
                 out[target_indices, i] = col_array
+            else:
+                data.append(self.prepare_column(col_array))
 
+        if self.work_inplace:
+            return out
+        else:
+            return self.join_columns(data)
+
+    def prepare_column(self, col_array):
+        return col_array
+
+    def join_columns(self, data):
         if self.is_sparse:
             # creating csr directly would need plenty of manual work which
             # would probably slow down the process - conversion coo to csr
             # is fast
+            coo_data = []
+            coo_col = []
+            coo_row = []
+            for i, col_array in enumerate(data):
+                coo_data.append(col_array.data)
+                coo_col.append(np.full(len(col_array.data), i))
+                coo_row.append(col_array.indices)  # row indices should be same
+            n_rows = col_array.shape[0]
             out = sp.coo_matrix(
-                (np.hstack(data), (np.hstack(sp_row), np.hstack(sp_col))),
+                (np.hstack(coo_data), (np.hstack(coo_row), np.hstack(coo_col))),
                 shape=(n_rows, len(self.src_cols)),
                 dtype=self.dtype
             )
-            out = out.tocsr()
-        elif self.is_dask:
-            out = dask.array.hstack(data)
-        return out
+            return out
 
     def join_parts(self, parts):
-        if self.is_dask:
-            return dask.array.vstack(parts)
-        elif self.is_sparse:
+        if self.is_sparse:
             return sp.vstack(parts)
         else:
             return parts
 
     def init_part(self, n_rows):
-        if self.is_sparse or self.is_dask:
+        if not self.work_inplace:
             return []
         else:  # a dense numpy array
             # F-order enables faster writing to the array while accessing and
@@ -370,22 +373,25 @@ class _ArrayConversion:
                             order="F", dtype=self.dtype)
 
     def add_part(self, parts, part):
-        if self.is_sparse or self.is_dask:
+        if not self.work_inplace:
             parts[self.target].append(part)
 
 
 class _FromTableConversion:
 
+    _array_conversion_class = _ArrayConversion
+
     def __init__(self, source, destination):
         conversion = DomainConversion(source, destination)
 
-        self.X = _ArrayConversion("X", conversion.attributes,
+        array_conv_class = self._array_conversion_class
+        self.X = array_conv_class("X", conversion.attributes,
                                   destination.attributes, conversion.sparse_X,
                                   source)
-        self.Y = _ArrayConversion("Y", conversion.class_vars,
+        self.Y = array_conv_class("Y", conversion.class_vars,
                                   destination.class_vars, conversion.sparse_Y,
                                   source)
-        self.metas = _ArrayConversion("metas", conversion.metas,
+        self.metas = array_conv_class("metas", conversion.metas,
                                       destination.metas, conversion.sparse_metas,
                                       source)
 
@@ -473,6 +479,7 @@ class Table(Sequence, Storage):
     _unlocked = 0xff  # pylint: disable=invalid-name
 
     _array_interface = np
+    _from_table_conversion_class = _FromTableConversion
 
     @property
     def columns(self):
@@ -820,12 +827,7 @@ class Table(Sequence, Storage):
             table_conversion = \
                 _idcache_restore(_thread_local.domain_cache, (domain, source.domain))
             if table_conversion is None:
-                table_conversion = _FromTableConversion(source.domain, domain)
-
-                # TODO decide when should the output be a dask array
-                table_conversion.X.is_dask = isinstance(source.X, dask.array.Array)
-                table_conversion.Y.is_dask = isinstance(source.Y, dask.array.Array)
-                table_conversion.metas.is_dask = False
+                table_conversion = cls._from_table_conversion_class(source.domain, domain)
 
                 _idcache_save(_thread_local.domain_cache, (domain, source.domain),
                               table_conversion)
