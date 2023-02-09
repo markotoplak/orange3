@@ -131,9 +131,8 @@ class TransformDomain:
 
 
 class ComputeValueProjector(SharedComputeValue):
-    def __init__(self, projection, feature, transform):
+    def __init__(self, feature, transform):
         super().__init__(transform)
-        self.projection = projection
         self.feature = feature
         self.transformed = None
 
@@ -149,7 +148,7 @@ class DomainProjection(Projection):
 
         def proj_variable(i, name):
             v = Orange.data.ContinuousVariable(
-                name, compute_value=ComputeValueProjector(self, i, transformer)
+                name, compute_value=ComputeValueProjector(i, transformer)
             )
             v.to_sql = LinearCombinationSql(
                 domain.attributes, self.components_[i, :],
