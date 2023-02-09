@@ -460,6 +460,31 @@ class LearnerAccessibility(unittest.TestCase):
                         err_msg='%s does not return same values when unpickled %s'
                                 % (learner.__class__.__name__, ds.name))
 
+    def test_all_models_work_after_unpickling_pca2(self):
+        datasets = [Table('iris'), Table('titanic')]
+        for learner in list(all_learners()):
+            # calibration, threshold learners' __init__ require arguments
+            if learner in (ThresholdLearner, CalibratedLearner):
+                continue
+            # Skip slow tests
+            if issubclass(learner, _RuleLearner):
+                continue
+            with self.subTest(learner.__name__):
+                learner = learner()
+                for ds in datasets:
+                    pca_ds = Orange.projection.PCA()(ds)(ds)
+                    model = learner(pca_ds)
+                    s = pickle.dumps(model, 0)
+                    model2 = pickle.loads(s)
+
+                    np.testing.assert_almost_equal(
+                        Table.from_table(model.domain, pca_ds).X,
+                        Table.from_table(model2.domain, pca_ds).X)
+                    np.testing.assert_almost_equal(
+                        model(pca_ds), model2(pca_ds),
+                        err_msg='%s does not return same values when unpickled %s'
+                                % (learner.__class__.__name__, ds.name))
+
     def test_adequacy_all_learners(self):
         for learner in all_learners():
             # calibration, threshold learners' __init__ requires arguments
