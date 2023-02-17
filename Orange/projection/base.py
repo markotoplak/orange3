@@ -3,6 +3,7 @@ import warnings
 import copy
 import inspect
 import threading
+import warnings
 
 import numpy as np
 
@@ -16,6 +17,8 @@ import Orange.preprocess
 
 __all__ = ["LinearCombinationSql", "Projector", "Projection", "SklProjector",
            "LinearProjector", "DomainProjection"]
+
+from Orange.util import OrangeDeprecationWarning
 
 
 class LinearCombinationSql:
@@ -85,6 +88,9 @@ class Projector(ReprableWithPreprocessors):
     # property descriptor utilizing thread local storage behind the scenes.
     @property
     def domain(self):
+        warnings.warn("Descendants of Projector should not use the domain attribute, "
+                      "which is deprecated and will be removed in the next release.",
+                      OrangeDeprecationWarning)
         return self.__tls.domain
 
     @domain.setter
@@ -129,15 +135,28 @@ class TransformDomain:
             data = data.transform(self.projection.pre_domain)
         return self.projection.transform(data.X)
 
+    def __eq__(self, other):
+        return type(self) is type(other) \
+               and self.projection == other.projection
+
+    def __hash__(self):
+        return hash((type(self), self.projection))
+
 
 class ComputeValueProjector(SharedComputeValue):
     def __init__(self, feature, transform):
         super().__init__(transform)
         self.feature = feature
-        self.transformed = None
 
     def compute(self, data, space):
         return space[:, self.feature]
+
+    def __eq__(self, other):
+        return super().__eq__(other) \
+               and self.feature == other.feature
+
+    def __hash__(self):
+        return hash((super().__hash__(), self.feature))
 
 
 class DomainProjection(Projection):
