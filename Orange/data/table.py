@@ -8,6 +8,7 @@ import zlib
 from collections.abc import Iterable, Sequence, Sized
 from contextlib import contextmanager
 from copy import deepcopy
+from enum import Enum
 from functools import reduce
 from itertools import chain
 from numbers import Real, Integral
@@ -222,6 +223,16 @@ def _compute_column(func, *args, **kwargs):
     return col
 
 
+class Conversion(Enum):
+    X = 0
+    Y = 1
+    METAS = 2
+    SEPARATE = 10
+    SHARED = 11
+    SUBARRAY = 12
+    UNKNOWN = 99
+
+
 class _ArrayConversion:
     def __init__(self, target, src_cols, variables, is_sparse, source_domain):
         self.target = target
@@ -257,7 +268,7 @@ class _ArrayConversion:
         def add_group(desc, group):
             if not group:
                 return  # skip adding empty groups
-            if desc[0] in {"X", "metas", "Y", "subarray"}:
+            if desc[0] in {Conversion.X, Conversion.Y, Conversion.METAS, Conversion.SUBARRAY}:
                 group = _optimize_indices(group, 10e30)  # maxlen should not be an issue
             groups.append((desc, group))
 
@@ -265,22 +276,22 @@ class _ArrayConversion:
         current_desc = None
         for i, col in enumerate(self.src_cols):
             if col is None:
-                desc = ("unknown", self.variables[i].Unknown)
+                desc = (Conversion.UNKNOWN, self.variables[i].Unknown)
             elif not isinstance(col, Integral):
                 if isinstance(col, SubarrayComputeValue):
-                    desc = ("subarray", col.compute_shared)
+                    desc = (Conversion.SUBARRAY, col.compute_shared)
                     col = col.index
                 elif isinstance(col, SharedComputeValue):
-                    desc = ("shared", col.compute_shared)
+                    desc = (Conversion.SHARED, col.compute_shared)
                 else:
-                    desc = ("separate", i)  # add index to guarantee non-repetition
+                    desc = (Conversion.SEPARATE, i)  # add index to guarantee non-repetition
             elif col < 0:
-                desc = ("metas",)
+                desc = (Conversion.METAS,)
                 col = -1 - col
             elif col < n_src_attrs:
-                desc = ("X",)
+                desc = (Conversion.X,)
             else:
-                desc = ("Y",)
+                desc = (Conversion.Y,)
                 col = col - n_src_attrs
 
             if current_desc == desc:
@@ -350,9 +361,11 @@ class _ArrayConversion:
 
         shared_cache = _thread_local.conversion_cache
         for i, (desc, cols) in enumerate(self.transform_groups):
-            if desc[0] == "unknown":
+
+            if desc[0] == Conversion.UNKNOWN:
                 yield np.full((n_rows, len(cols)), desc[1])
-            elif desc[0] == "shared":
+
+            elif desc[0] == Conversion.SHARED:
                 compute_shared = desc[1]
                 shared = _idcache_restore(shared_cache, desc[1:] + (source,))
                 if shared is None:
@@ -362,7 +375,8 @@ class _ArrayConversion:
                 for c in cols:
                     t.append(c(sourceri, shared_data=shared).reshape(-1, 1))
                 yield _hstack(t)
-            elif desc[0] == "subarray":
+
+            elif desc[0] == Conversion.SUBARRAY:
                 # TODO for operation such as PCA non-caching of subarrays would yield
                 # repeated computation of all subarray columns were not together.
                 # for operations souch as normalization it does not mattter
@@ -370,17 +384,20 @@ class _ArrayConversion:
                 shared = compute_shared(sourceri, cols)
                 yield shared
 
-            elif desc[0] == "separate":
+            elif desc[0] == Conversion.SEPARATE:
                 yield cols[0](sourceri).reshape(-1, 1)
 
-            elif desc[0] == "metas":
+            elif desc[0] == Conversion.METAS:
                 yield _sa(source.metas, row_indices, cols)
 
-            elif desc[0] == "X":
+            elif desc[0] == Conversion.X:
                 yield _sa(X, row_indices, cols)
 
-            else:
+            elif desc[0] == Conversion.Y:
                 yield _sa(Y, row_indices, cols)
+
+            else:
+                raise Exception("Unknown conversion type")
 
     def get_columns(self, source, row_indices, out=None, target_indices=None):
         n_rows = _selection_length(row_indices, len(source))
