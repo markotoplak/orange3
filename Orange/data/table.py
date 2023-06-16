@@ -385,7 +385,11 @@ class _ArrayConversion:
                 yield shared
 
             elif desc[0] == Conversion.SEPARATE:
-                yield cols[0](sourceri).reshape(-1, 1)
+                r = cols[0](sourceri)
+                if not hasattr(r, "shape"):
+                    yield np.broadcast_to(r, (n_rows, 1))
+                else:
+                    yield r.reshape(n_rows, 1)
 
             elif desc[0] == Conversion.METAS:
                 yield _sa(source.metas, row_indices, cols)
