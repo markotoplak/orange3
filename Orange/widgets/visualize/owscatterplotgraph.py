@@ -1,7 +1,7 @@
 import sys
 import itertools
 import warnings
-import random
+
 from typing import Callable
 from xml.sax.saxutils import escape
 from datetime import datetime, timezone
@@ -584,8 +584,7 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
             min_x, max_x = np.min(x_data), np.max(x_data)
             min_y, max_y = np.min(y_data), np.max(y_data)
 
-            if self.x1 is None or self.x2 is None or \
-                    self.y1 is None or self.y2 is None:
+            if self.x1 is None or self.x2 is None or self.y1 is None or self.y2 is None:
                 self.x1, self.x2 = min_x, max_x
                 self.y1, self.y2 = min_y, max_y
 
@@ -594,100 +593,123 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
 
             # Data points in previous view range
             mask_old = np.flatnonzero(
-                ((x_data > self.x1) & (x_data < self.x2)) &
-                ((y_data > self.y1) & (y_data < self.y2))
+                ((x_data > self.x1) & (x_data < self.x2))
+                & ((y_data > self.y1) & (y_data < self.y2))
             )
 
             # Data points in new view range
             mask_new = np.flatnonzero(
-                ((x_data > new_x1) & (x_data < new_x2)) &
-                ((y_data > new_y1) & (y_data < new_y2))
+                ((x_data > new_x1) & (x_data < new_x2))
+                & ((y_data > new_y1) & (y_data < new_y2))
             )
 
-            # Find the differance of data points between current and previous views
-            sample_indices = set(self.sample_indices)
-            mask_old = set(mask_old)
-            mask_new = set(mask_new)
-
-
-            is_zoom_in = all((new_x1 > self.x1,
-                              new_x2 < self.x2,
-                              new_y1 > self.y1,
-                              new_y2 < self.y2))
-
-            # is_zoom_out = all((new_x1 < self.x1,
-            #                    new_x2 > self.x2,
-            #                    new_y1 < self.y1,
-            #                    new_y2 > self.y2))
+            is_zoom_in = all(
+                (new_x1 > self.x1, new_x2 < self.x2, new_y1 > self.y1, new_y2 < self.y2)
+            )
 
             # Update previous view ranges
             self.x1, self.x2 = new_x1, new_x2
             self.y1, self.y2 = new_y1, new_y2
 
+            np_random = np.random.RandomState()
             if is_zoom_in:
                 # remove currently sampled data points that got zoomed out.
-                zoomed_out_samples = sample_indices & (mask_old - mask_new)
-                samples_to_keep = sample_indices - zoomed_out_samples
+                zoomed_out_samples = np.intersect1d(
+                    self.sample_indices,
+                    np.setdiff1d(mask_old, mask_new, assume_unique=True),
+                    assume_unique=True,
+                )
+                samples_to_keep = np.setdiff1d(
+                    self.sample_indices, zoomed_out_samples, assume_unique=True
+                )
 
-                # data points that we should sample now must not already be sampled
-                new_sample_candidates = mask_new - samples_to_keep
-                k = self.sample_size - len(samples_to_keep)
+                # data points that we will sample must not already be sampled
+                new_sample_candidates = np.setdiff1d(
+                    mask_new, samples_to_keep, assume_unique=True
+                )
 
                 # sample size iz larger than number of available data
                 if len(mask_new) < self.sample_size:
                     return
 
-                if len(new_sample_candidates) > k:
-                    new_sample_candidates = set(
-                        random.sample(new_sample_candidates, k=k))
+                if len(new_sample_candidates) > len(zoomed_out_samples):
+                    new_sample_candidates = np_random.choice(
+                        new_sample_candidates, size=len(zoomed_out_samples),
+                        replace=False
+                    )
 
                 # join currently sampled data points with proportion of new one in the
                 # zoomed in area
-                self.sample_indices = np.array(
-                    list(samples_to_keep | new_sample_candidates))
-
+                self.sample_indices = np.union1d(samples_to_keep, new_sample_candidates)
             else:
-                diff = mask_new - mask_old
+                # Find the differance of data points between current and previous views
+                diff = np.setdiff1d(mask_new, mask_old, assume_unique=True)
 
                 # Sampled and non-sampled data points in the overlapped area.
-                intersect_data_points = mask_old & mask_new
+                intersect_data_points = np.intersect1d(mask_old, mask_new,
+                                                       assume_unique=True)
 
                 # Data points that are already sampled and are in the overlapped area.
-                intersect_sampled_points = intersect_data_points & sample_indices
+                intersect_sampled_points = np.intersect1d(
+                    intersect_data_points, self.sample_indices, assume_unique=True
+                )
 
                 # Non-sampled datapoints in the overlapped area.
-                intersect_non_sampled_points = intersect_data_points - sample_indices
+                intersect_non_sampled_points = np.setdiff1d(
+                    intersect_data_points, self.sample_indices, assume_unique=True
+                )
 
                 # sample size iz larger than number of available data
                 if len(mask_new) < self.sample_size:
                     return
 
                 if not len(diff):
-
                     # do nothing
                     if len(intersect_sampled_points) == self.sample_size:
                         return
 
                     # add remaining data samples
-                    self.sample_indices = np.array(list(intersect_sampled_points | set(random.sample(intersect_non_sampled_points, k=self.sample_size - len(intersect_sampled_points)))))
+                    new_sample_candidates = np_random.choice(
+                        intersect_non_sampled_points,
+                        size=self.sample_size - len(intersect_sampled_points),
+                        replace=False,
+                    )
+                    self.sample_indices = np.union1d(
+                        intersect_sampled_points, new_sample_candidates,
+                        assume_unique=True
+                    )
 
                 else:
                     # size ratio between arrays
                     ratio = len(intersect_data_points) / len(diff)
 
-                    num_of_samples_overlap = round(ratio / (ratio + 1) * self.sample_size)
+                    num_of_samples_overlap = round(
+                        ratio / (ratio + 1) * self.sample_size)
                     num_of_samples_diff = self.sample_size - num_of_samples_overlap
 
                     m = num_of_samples_overlap - len(intersect_sampled_points)
                     if m > 0:
-                        overlap_samples = intersect_sampled_points | set(random.sample(intersect_non_sampled_points, k=m))
-                        new_samples = set(random.sample(diff, k=num_of_samples_diff))
+                        intersect_non_sampled_points = np_random.choice(
+                            intersect_non_sampled_points, size=m, replace=False
+                        )
+                        overlap_samples = np.union1d(
+                            intersect_sampled_points, intersect_non_sampled_points
+                        )
+                        new_samples = np_random.choice(
+                            diff, size=num_of_samples_diff, replace=False
+                        )
                     else:
-                        to_remove = set(random.sample(intersect_sampled_points, k=abs(m)))
-                        overlap_samples = intersect_sampled_points - to_remove
-                        new_samples = set(random.sample(diff, k=num_of_samples_diff))
+                        to_remove = np_random.choice(
+                            intersect_sampled_points, size=abs(m), replace=False
+                        )
+                        overlap_samples = np.setdiff1d(
+                            intersect_sampled_points, to_remove, assume_unique=True
+                        )
+                        new_samples = np_random.choice(
+                            diff, size=num_of_samples_diff, replace=False
+                        )
 
-                    self.sample_indices = np.array(list(overlap_samples | new_samples))
+                    self.sample_indices = np.union1d(overlap_samples, new_samples)
 
             self.clear()
             self.update_coordinates()
@@ -695,8 +717,11 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
 
         self._proxy_sigRangeChanged = pg.SignalProxy(
             # self.plot_widget.plotItem.sigRangeChangedManually, slot=test, delay=0.5
-            self.view_box.sigRangeChangedManually, slot=sample_points_in_current_view, delay=0.4
+            self.view_box.sigRangeChangedManually,
+            slot=sample_points_in_current_view,
+            delay=0.4,
         )
+
         self.timer = None
         self.parameter_setter = ScatterBaseParameterSetter(self)
 
@@ -950,8 +975,8 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
                 and self.sample_indices is None \
                 and self.n_valid != self.n_shown:
 
-            random = np.random.RandomState()
-            self.sample_indices = random.choice(
+            np_random = np.random.RandomState()
+            self.sample_indices = np_random.choice(
                 mask if mask is not None else self.n_valid, self.n_shown, replace=False)
 
             # TODO: Is this really needed?
@@ -971,9 +996,9 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
             span_x = np.max(x) - np.min(x)
         if span_y is None:
             span_y = np.max(y) - np.min(y)
-        random = np.random.RandomState(seed=0)
-        rs = random.uniform(0, 1, len(x))
-        phis = random.uniform(0, 2 * np.pi, len(x))
+        np_random = np.random.RandomState(seed=0)
+        rs = np_random.uniform(0, 1, len(x))
+        phis = np_random.uniform(0, 2 * np.pi, len(x))
         magnitude = self.jitter_size / 100
         return (x + magnitude * span_x * rs * np.cos(phis),
                 y + magnitude * span_y * rs * np.sin(phis))
