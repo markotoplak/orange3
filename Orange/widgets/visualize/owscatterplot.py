@@ -524,15 +524,22 @@ class OWScatterPlot(OWDataProjectionWidget):
         if self.data is None:
             return None
 
+        if self.attr_x is None or self.attr_y is None:
+            return None
+
         if self.cached_x_data is None or self.cached_y_data is None:
             self.cached_x_data = self.get_column(self.attr_x, filter_valid=False)
             self.cached_y_data = self.get_column(self.attr_y, filter_valid=False)
+
             if isinstance(self.data, DaskTable):
-                self.cached_x_data, self.cached_y_data = dask.compute(self.cached_x_data, self.cached_y_data)
+                self.cached_x_data, self.cached_y_data = dask.compute(
+                    self.cached_x_data, self.cached_y_data
+                )
 
         self.Warning.missing_coords.clear()
         self.Information.missing_coords.clear()
-        self.valid_data = np.isfinite(self.cached_x_data) & np.isfinite(self.cached_y_data)
+        self.valid_data = np.isfinite(self.cached_x_data) & np.isfinite(
+            self.cached_y_data)
         if self.valid_data is not None and not np.all(self.valid_data):
             msg = self.Information if np.any(self.valid_data) else self.Warning
             msg.missing_coords(self.attr_x.name, self.attr_y.name)

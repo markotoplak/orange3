@@ -663,7 +663,7 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
                 if len(mask_new) < self.sample_size:
                     return
 
-                if not len(diff):
+                if not diff:
                     # do nothing
                     if len(intersect_sampled_points) == self.sample_size:
                         return
@@ -1016,13 +1016,16 @@ class OWScatterPlotBase(gui.OWComponent, QObject):
         x, y = self.get_coordinates()
         if x is None or len(x) == 0:
             return
+
+        # if we call reset view every time we drag or zoom the view it is not OK.
         # self._reset_view(x, y)
+
         if self.scatterplot_item is None:
             if self.sample_indices is None:
                 indices = np.arange(self.n_valid)
             else:
                 indices = self.sample_indices
-            kwargs = dict(x=x, y=y, data=indices)
+            kwargs = {"x": x, "y": y, "data": indices}
             self.scatterplot_item = ScatterPlotItem(**kwargs)
             self.scatterplot_item.sigClicked.connect(self.select_by_click)
             self.scatterplot_item_sel = ScatterPlotItem(**kwargs)

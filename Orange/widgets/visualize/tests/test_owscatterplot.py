@@ -1235,6 +1235,23 @@ class TestOWScatterPlotWithDask(TestOWScatterPlot):
     def init(self):
         self.data = temp_dasktable("iris")
 
+    def test_data_column_nans(self):
+        table = temp_dasktable(datasets.data_one_column_nans())
+        self.send_signal(self.widget.Inputs.data, table)
+        cb_attr_color = self.widget.controls.attr_color
+        simulate.combobox_activate_item(cb_attr_color, "b")
+        simulate.combobox_activate_item(self.widget.cb_attr_x, "a")
+        simulate.combobox_activate_item(self.widget.cb_attr_y, "a")
+
+        # self.widget.update_graph()
+        self.widget.graph.reset_graph()
+
+    def test_data_column_infs(self):
+        table = temp_dasktable(datasets.data_one_column_infs())
+        self.send_signal(self.widget.Inputs.data, table)
+        attr_x = self.widget.controls.attr_x
+        simulate.combobox_activate_item(attr_x, "b")
+
 
 if __name__ == "__main__":
     import unittest
