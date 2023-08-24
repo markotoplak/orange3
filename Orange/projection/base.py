@@ -189,6 +189,8 @@ class DomainProjection(Projection):
     var_prefix = "C"
 
     def __init__(self, proj, domain, n_components):
+        super().__init__(proj=proj)
+
         transformer = TransformDomain(self)
 
         def proj_variable(i, name):
@@ -200,13 +202,17 @@ class DomainProjection(Projection):
                 getattr(self, 'mean_', None))
             return v
 
-        super().__init__(proj=proj)
-        self.orig_domain = domain
         self.n_components = n_components
         var_names = self._get_var_names(n_components)
         self.domain = Orange.data.Domain(
             [proj_variable(i, var_names[i]) for i in range(n_components)],
             domain.class_vars, domain.metas)
+
+    @property
+    def orig_domain(self):
+        warnings.warn("orig_domain is deprecated, use pre_domain.",
+                      OrangeDeprecationWarning, stacklevel=2)
+        return self.proj.pre_domain
 
     def _get_var_names(self, n):
         postfixes = ["x", "y"] if n == 2 else [str(i) for i in range(1, n + 1)]
@@ -225,11 +231,11 @@ class DomainProjection(Projection):
             return True
         return super().__eq__(other) \
             and self.n_components == other.n_component \
-            and self.orig_domain == other.orig_domain \
+            and self.pre_domain == other.pre_domain \
             and self.domain == other.domain
 
     def __hash__(self):
-        return hash((super().__hash__(), self.n_components, self.orig_domain, self.domain))
+        return hash((super().__hash__(), self.n_components, self.pre_domain, self.domain))
 
 
 class LinearProjector(Projector):

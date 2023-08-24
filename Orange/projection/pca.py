@@ -291,7 +291,7 @@ class PCAModel(DomainProjection, metaclass=WrapperMeta):
 
     def _get_var_names(self, n):
         names = [f"{self.var_prefix}{postfix}" for postfix in range(1, n + 1)]
-        return get_unique_names(self.orig_domain, names)
+        return get_unique_names(self.pre_domain, names)
 
 
 class IncrementalPCA(SklProjector):
