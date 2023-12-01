@@ -650,9 +650,10 @@ class OWImpute(OWWidget):
 
     def set_method_for_indexes(self, indexes, method_index):
         # type: (List[QModelIndex], Method) -> None
-        if method_index == Method.AsAboveSoBelow:
+        if method_index is None:  # fallback to the default
             for index in indexes:
                 self.varmodel.setData(index, None, StateRole)
+        # TODO should we clear when someone sets the default?
         elif method_index == Method.Default:
             current = self.value_stack.currentWidget()
             if current is self.value_combo:
@@ -685,9 +686,8 @@ class OWImpute(OWWidget):
         self.set_method_for_current_selection(Method.Default)
 
     def reset_variable_state(self):
-        # TODO
         indexes = list(map(self.varmodel.index, range(len(self.varmodel))))
-        self.set_method_for_indexes(indexes, Method.AsAboveSoBelow)
+        self.set_method_for_indexes(indexes, None)
         self.variable_button_group.button(Method.AsAboveSoBelow).setChecked(True)
 
     def _store_state(self):
