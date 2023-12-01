@@ -390,16 +390,23 @@ class OWImpute(OWWidget):
         self.update_varview()
         self.commit.deferred()
 
+    def get_state_for_column(self, column_index):
+        assert 0 <= column_index < len(self.varmodel)
+        idx = self.varmodel.index(column_index, 0)
+        state = idx.data(StateRole)
+        if state is None:
+            if column_index < len(self.data.domain.attributes):
+                state = (Method.AsAboveSoBelow, ())
+            else:
+                state = (Method.Leave, ())
+        return state
+
     def get_method_for_column(self, column_index):
         # type: (int) -> impute.BaseImputeMethod
         """
         Return the imputation method for column by its index.
         """
-        assert 0 <= column_index < len(self.varmodel)
-        idx = self.varmodel.index(column_index, 0)
-        state = idx.data(StateRole)
-        if state is None:
-            state = (Method.AsAboveSoBelow, ())
+        state = self.get_state_for_column(column_index)
         return self.create_imputer(state[0], *state[1])
 
     def _invalidate(self):
@@ -570,9 +577,7 @@ class OWImpute(OWWidget):
         # thus pylint: disable=too-many-branches
         indexes = self.selection.selectedIndexes()
         self.methods_container.setEnabled(len(indexes) > 0)
-        defmethod = (Method.AsAboveSoBelow, ())
-        methods = [index.data(StateRole) for index in indexes]
-        methods = [m if m is not None else defmethod for m in methods]
+        methods = [self.get_state_for_column(index.row()) for index in indexes]
         methods = set(methods)
         selected_vars = [self.varmodel[index.row()] for index in indexes]
         has_discrete = any(var.is_discrete for var in selected_vars)
@@ -604,6 +609,10 @@ class OWImpute(OWWidget):
                           selected_vars)
             button = self.variable_button_group.button(method)
             button.setEnabled(enabled)
+
+            if method == Method.AsAboveSoBelow and \
+                    all(a in self.data.domain.class_vars for a in selected_vars):
+                button.setEnabled(False)
 
         # Update the "Value" edit GUI.
         if not has_discrete:
@@ -676,6 +685,7 @@ class OWImpute(OWWidget):
         self.set_method_for_current_selection(Method.Default)
 
     def reset_variable_state(self):
+        # TODO
         indexes = list(map(self.varmodel.index, range(len(self.varmodel))))
         self.set_method_for_indexes(indexes, Method.AsAboveSoBelow)
         self.variable_button_group.button(Method.AsAboveSoBelow).setChecked(True)

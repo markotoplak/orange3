@@ -93,7 +93,12 @@ class TestOWImpute(WidgetTest):
         self.assertTrue(
             all(isinstance(m, AsDefault) and isinstance(m.method, impute.Average)
                 for m in map(widget.get_method_for_column,
-                             range(len(data.domain.variables)))))
+                             range(len(data.domain.attributes)))))
+
+        self.assertTrue(
+            all(isinstance(m, impute.DoNotImpute)
+                for m in map(widget.get_method_for_column,
+                             range(len(data.domain.attributes), len(data.domain.variables)))))
 
         # change method for first variable
         select_row(view, 0)
