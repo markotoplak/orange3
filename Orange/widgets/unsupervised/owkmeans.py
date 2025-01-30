@@ -115,6 +115,7 @@ class OWKMeans(widget.OWWidget):
             replaces=["Annotated Data"]
         )
         centroids = Output("Centroids", Table)
+        model = Output("Model", KMeansModel)
 
     class Error(widget.OWWidget.Error):
         failed = widget.Msg("Clustering failed\nError: {}")
@@ -513,6 +514,7 @@ class OWKMeans(widget.OWWidget):
             k = self.k
 
         km = self.clusterings.get(k)
+        print(type(km))
         if self.data is None or km is None or isinstance(km, str):
             self.Outputs.annotated_data.send(None)
             self.Outputs.centroids.send(None)
@@ -573,8 +575,18 @@ class OWKMeans(widget.OWWidget):
         else:
             centroids.name = f"{self.data.name} centroids"
 
+        from Orange.classification.base_classification import ModelClassification
+        class CentroidModel(ModelClassification):
+
+            def __init__(self, centroids):
+                self.centroids = centroids
+
+            def __call__(self, data):
+                return
+
         self.Outputs.annotated_data.send(new_table)
         self.Outputs.centroids.send(centroids)
+        self.Outputs.model.send(km)
 
     @Inputs.data
     @check_sql_input

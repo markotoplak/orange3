@@ -2,6 +2,7 @@ import warnings
 
 import sklearn.cluster
 
+from Orange.base import SklModel
 from Orange.clustering.clustering import Clustering, ClusteringModel
 from Orange.data import Table
 
@@ -9,15 +10,17 @@ from Orange.data import Table
 __all__ = ["KMeans"]
 
 
-class KMeansModel(ClusteringModel):
+class KMeansModel(ClusteringModel, SklModel):
 
     def __init__(self, projector):
         super().__init__(projector)
+        self.name = "blalbla"
         self.centroids = projector.cluster_centers_
         self.k = projector.get_params()["n_clusters"]
 
     def predict(self, X):
-        return self.projector.predict(X)
+        preds = self.projector.predict(X)
+        return preds
 
 
 class KMeans(Clustering):

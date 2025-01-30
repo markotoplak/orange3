@@ -15,7 +15,7 @@ class ClusteringModel:
         self.original_domain = None
         self.labels = projector.labels_
 
-    def __call__(self, data):
+    def __call__(self, data, val):
         def fix_dim(x):
             return x[0] if one_d else x
 
@@ -51,7 +51,11 @@ class ClusteringModel:
             raise TypeError("Unrecognized argument (instance of '{}')"
                             .format(type(data).__name__))
 
-        return fix_dim(prediction)
+        fd = fix_dim(prediction)
+        preds = np.zeros((len(fd), 3))
+        for i in range(len(fd)):
+            preds[i, fd[i]] = 1.
+        return fd, preds
 
     def predict(self, X):
         raise NotImplementedError(
