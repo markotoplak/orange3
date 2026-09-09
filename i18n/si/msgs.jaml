@@ -13018,6 +13018,7 @@ widgets/utils/itemmodels.py:
         def `discrete_variable_tooltip`:
             '<b>%s</b><br/>Categorical with %i values: ': '<b>%s</b><br/>Kategorična, %i vrednost(i): '
             ', ': false
+            ' (%i more)': ' (in še %i)'
             %r: false
         def `time_variable_toltip`:
             <b>%s</b><br/>Time: <b>%s</b><br/>Časovna
